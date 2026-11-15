@@ -26,7 +26,7 @@ def tokens(text):
 def model_json(messages):
     from .llm import chat
     result = chat(os.getenv('AFD_WATCHER_MODEL', 'databricks-qwen3-next-80b-a3b-instruct'), messages,
-                  max_tokens=1600, timeout_s=90)
+                  max_tokens=1600, temperature=0, timeout_s=90)
     result = re.sub(r'^```(?:json)?\s*|\s*```$', '', result.strip())
     return json.loads(result)
 
@@ -400,5 +400,12 @@ _watcher = None
 def get_watcher():
     global _watcher
     if _watcher is None:
-        _watcher = Watcher(open_documents())
+        if os.getenv('AFD_WORKFLOW', 'sentinel') == 'sentinel':
+            from .sentinel import SentinelWatcher
+            db = open_documents()
+            if db.mode != 'delta':
+                raise ValueError('Sentinel runtime requires AFD_DELTA=1 and a Unity Catalog SQL warehouse.')
+            _watcher = SentinelWatcher(db)
+        else:
+            _watcher = Watcher(open_documents())
     return _watcher

@@ -1,0 +1,26 @@
+person_email,note
+ben.okafor@wildguardlabs.org,Access logs show the public map layer was exposed from 2:10 PM to 4:05 PM with 14 external views.
+ben.okafor@wildguardlabs.org,The layer was unpublished at 4:05 PM.
+ben.okafor@wildguardlabs.org,The logs do not establish who viewed the coordinates or whether anyone copied them.
+mei.tanaka@wildguardlabs.org,Black rhinos range near the north reserve boundary.
+mei.tanaka@wildguardlabs.org,Exposed coordinates from sightings within 48 hours are high risk.
+mei.tanaka@wildguardlabs.org,The sighting timestamp must be checked before assigning the incident a risk level.
+carlos.rivera@wildguardlabs.org,The ranger lead at the partner reserve is reachable by phone.
+carlos.rivera@wildguardlabs.org,The partner alert protocol needs CEO approval first.
+carlos.rivera@wildguardlabs.org,The ranger lead can confirm patrol coverage once an approved alert is delivered.
+elena.marsh@wildguardlabs.org,Policy says disclosure to partners requires CEO approval for incidents with confirmed external views.
+elena.marsh@wildguardlabs.org,Approval should be requested with the confirmed exposure scope and conservation risk.
+elena.marsh@wildguardlabs.org,These notes describe policy and do not record approval for this incident.
+nadia.petrov@wildguardlabs.org,The map layer configuration changed in the last deploy.
+nadia.petrov@wildguardlabs.org,A rollback of that deploy is available.
+nadia.petrov@wildguardlabs.org,Security must verify public access is blocked after any rollback.
+kofi.mensah@wildguardlabs.org,Conservation staff coordinate incident priorities with the reserve team.
+kofi.mensah@wildguardlabs.org,Mei evaluates biological risk and Carlos maintains the ranger contact protocol.
+priya.nair@wildguardlabs.org,Community moderators can hide reports containing precise coordinates.
+priya.nair@wildguardlabs.org,Moderator guidance asks users to share a coarse area instead of exact animal locations.
+hannah.lindqvist@wildguardlabs.org,The backend publishes approved sightings to a separate public map layer.
+hannah.lindqvist@wildguardlabs.org,Backend request logs can help trace the configuration version serving a map request.
+sofia.duarte@wildguardlabs.org,The mobile app supports submitting sightings while offline.
+sofia.duarte@wildguardlabs.org,Mobile previews use a coarse area but queued reports retain the original sighting timestamp.
+jamal.reed@wildguardlabs.org,The GIS pipeline generates separate restricted and public map layers.
+jamal.reed@wildguardlabs.org,Public layers should contain coarse areas and omit precise sighting coordinates.

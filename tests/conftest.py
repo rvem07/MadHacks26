@@ -12,6 +12,11 @@ from afd.store import reset_store
 DEMO_TODAY = "2026-11-14"
 
 
+def pytest_addoption(parser):
+    parser.addoption('--run-sentinel-browser', action='store_true', default=False,
+                     help='Run headless Chrome with a temporary localhost fixture server')
+
+
 @pytest.fixture
 def store(tmp_path):
     reset_settings(data_dir=tmp_path, today_override=DEMO_TODAY, auto_reply_s=-1.0)

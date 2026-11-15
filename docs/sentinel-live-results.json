@@ -1,0 +1,14 @@
+{
+  "url": "https://agent-watcher-7474649299876234.aws.databricksapps.com",
+  "checks": {
+    "fresh_context_app_access": "passed",
+    "pipeline_counts_and_graph": "passed",
+    "sequential_pause_persona_resume": "passed",
+    "parallel_glowing_nodes_and_summary": "passed",
+    "manual_elena_refresh_and_resume": "passed",
+    "out_of_context_persona": "passed"
+  },
+  "errors": [],
+  "authentication": "fresh private context; CLI OAuth; no saved cookies",
+  "result": "passed"
+}

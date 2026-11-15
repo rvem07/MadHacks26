@@ -255,8 +255,9 @@ def test_delta_projection_bronze_is_insert_only_and_parameterized():
     db._project_row('bronze_org_chart', 'test', {'name':"O'Hara", 'email':' Mixed@Example.com '}, immutable=True)
     sql, values = statements[0]
     assert 'WHEN MATCHED' not in sql
-    assert "O'Hara" not in sql and values['name'] == "O'Hara"
-    assert values['email'] == ' Mixed@Example.com '
+    import json
+    assert "O'Hara" not in sql and json.loads(values['rows'])[0]['name'] == "O'Hara"
+    assert json.loads(values['rows'])[0]['email'] == ' Mixed@Example.com '
 
 
 def test_delta_bootstrap_has_physical_tables_and_routing_view():

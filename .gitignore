@@ -9,7 +9,10 @@ __pycache__/
 .pytest_cache/
 
 # Local runtime state written by the app (JSON store, simulated repo, benchmark output)
-data/
+data/*
+!data/org_chart.csv
+!data/responsibilities.csv
+!data/person_context.csv
 
 # OS / editor noise
 .DS_Store

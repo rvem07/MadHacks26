@@ -16,6 +16,12 @@ class StartRequest(BaseModel):
     task: str = Field(min_length=1, max_length=12000)
     requester: str = Field(min_length=1)
     scenario: str | None = None
+    run_all: bool = False
+
+
+class ManualRequest(BaseModel):
+    person: str
+    manual: bool
 
 
 class AnswerRequest(BaseModel):
@@ -51,8 +57,9 @@ def meta():
 
 @router.get('/pipeline')
 def pipeline(batch: str | None = None):
-    p = call(get_watcher().pipeline, batch)
-    return {k: p[k] for k in ('batch_id', 'created_at', 'nodes', 'edges', 'stats', 'quarantine', 'silver_responsibilities')}
+    w = get_watcher()
+    p = call(w.pipeline, batch)
+    return dict({k: p[k] for k in ('batch_id', 'created_at', 'nodes', 'edges', 'stats', 'quarantine', 'silver_responsibilities')}, storage_mode=w.db.mode)
 
 
 @router.get('/runs')
@@ -62,7 +69,32 @@ def runs():
 
 @router.post('/runs')
 def start(body: StartRequest):
-    return call(get_watcher().start, body.task, body.requester, body.scenario)
+    w = get_watcher()
+    if hasattr(w, 'preferences'):
+        return call(w.start, body.task, body.requester, body.scenario, body.run_all)
+    return call(w.start, body.task, body.requester, body.scenario)
+
+
+@router.get('/manual')
+def manual_preferences():
+    return call(get_watcher().preferences)
+
+
+@router.put('/manual')
+def manual_preference(body: ManualRequest):
+    return call(get_watcher().preferences, body.person, body.manual)
+
+
+@router.post('/persona')
+def persona(body: AnswerRequest):
+    return {'answer': call(get_watcher().persona, body.person, body.answer)}
+
+
+@router.get('/runs/{run_id}/events')
+def run_events(run_id: str):
+    w = get_watcher()
+    doc = call(w.get, run_id)
+    return w.db.events(run_id) if w.db.mode == 'delta' else doc['events']
 
 
 @router.get('/runs/{run_id}')
@@ -82,6 +114,8 @@ def answer(request_id: str, body: AnswerRequest):
 
 @router.post('/runs/{run_id}/{action}')
 def control(run_id: str, action: str, body: ControlRequest = Body(default=ControlRequest())):
+    if action == 'reset' and hasattr(get_watcher(), 'reset'):
+        return call(get_watcher().reset, run_id)
     return call(get_watcher().control, run_id, action, body.actor)
 
 
@@ -91,6 +125,26 @@ def stream(run_id: str, after: int = Query(default=0, ge=0)):
     call(watcher.get, run_id)
 
     async def updates():
+        if hasattr(watcher, 'subscribe'):
+            queue = asyncio.Queue()
+            subscription = watcher.subscribe(run_id, asyncio.get_running_loop(), queue)
+            last = after
+            try:
+                while True:
+                    doc = await asyncio.to_thread(watcher.get, run_id)
+                    events = await asyncio.to_thread(watcher.db.events, run_id) if watcher.db.mode == 'delta' else doc['events']
+                    doc['events'] = events
+                    for event in events:
+                        if event['step'] > last:
+                            yield f'event: ev\ndata: {json.dumps(event)}\n\n'
+                            last = event['step']
+                    yield f'event: state\ndata: {json.dumps(doc)}\n\n'
+                    if doc['status'] in {'done', 'cancelled'}:
+                        return
+                    await queue.get()  # Commit notification; no polling or timer.
+            finally:
+                watcher.unsubscribe(subscription)
+            return
         last = after
         revision = None
         while True:

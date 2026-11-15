@@ -15,7 +15,7 @@ import logging
 log = logging.getLogger(__name__)
 
 _client = None
-_pool = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="llm")
+_pool = concurrent.futures.ThreadPoolExecutor(max_workers=16, thread_name_prefix="llm")
 
 
 def _workspace():

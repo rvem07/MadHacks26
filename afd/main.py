@@ -44,12 +44,12 @@ app.include_router(watcher_router)
 
 @app.get("/api/mode")
 def workflow_mode():
-    return {"workflow": os.getenv("AFD_WORKFLOW", "watcher")}
+    return {"workflow": os.getenv("AFD_WORKFLOW", "sentinel")}
 
 
 @app.on_event("startup")
 def _startup() -> None:
-    if os.getenv("AFD_WORKFLOW", "watcher") == "watcher":
+    if workflow_mode()['workflow'] in {'watcher', 'sentinel'}:
         from .watcher import get_watcher
         w = get_watcher()
         if w.db.mode == "local" and not w.db.get("active_pipeline"):
@@ -76,13 +76,13 @@ def _err(e: Exception, code: int = 400):
 # ----------------------------------------------------------------- pages
 @app.get("/")
 def index():
-    page = "watcher.html" if workflow_mode()["workflow"] == "watcher" else "index.html"
+    page = "sentinel.html" if workflow_mode()['workflow'] == 'sentinel' else "watcher.html" if workflow_mode()["workflow"] == "watcher" else "index.html"
     return FileResponse(STATIC / page)
 
 
 @app.get("/api/meta")
 def meta():
-    if workflow_mode()['workflow'] == 'watcher':
+    if workflow_mode()['workflow'] in {'watcher', 'sentinel'}:
         from .watcher_api import meta as watcher_meta
         return watcher_meta()
     """Everything the UI needs to boot: people, types, tools, versions, modes."""
@@ -106,7 +106,7 @@ def meta():
 # -------------------------------------------------------------- ontology
 @app.get("/api/ontology")
 def get_ontology(version: int | None = None):
-    if workflow_mode()['workflow'] == 'watcher':
+    if workflow_mode()['workflow'] in {'watcher', 'sentinel'}:
         from .watcher_api import pipeline
         return pipeline()
     try:
@@ -200,7 +200,7 @@ def audit_log(limit: int = 200):
 # ------------------------------------------------------------------ runs
 @app.get("/api/runs")
 def list_runs():
-    if workflow_mode()['workflow'] == 'watcher':
+    if workflow_mode()['workflow'] in {'watcher', 'sentinel'}:
         from .watcher_api import runs
         return runs()
     return get_manager().list()
@@ -208,7 +208,7 @@ def list_runs():
 
 @app.post("/api/runs")
 def start_run(request: Request, body: dict = Body(...)):
-    if workflow_mode()['workflow'] == 'watcher':
+    if workflow_mode()['workflow'] in {'watcher', 'sentinel'}:
         from .watcher_api import start, StartRequest, call
         return start(call(StartRequest.model_validate, body))
     task = (body.get("task") or "").strip()
@@ -220,7 +220,7 @@ def start_run(request: Request, body: dict = Body(...)):
 
 @app.get("/api/runs/{run_id}")
 def get_run(run_id: str):
-    if workflow_mode()['workflow'] == 'watcher':
+    if workflow_mode()['workflow'] in {'watcher', 'sentinel'}:
         from .watcher_api import get
         return get(run_id)
     m = get_manager()
@@ -233,7 +233,7 @@ def get_run(run_id: str):
 
 @app.get("/api/runs/{run_id}/stream")
 async def stream_run(run_id: str, after: int = 0):
-    if workflow_mode()['workflow'] == 'watcher':
+    if workflow_mode()['workflow'] in {'watcher', 'sentinel'}:
         from .watcher_api import stream
         return stream(run_id, after)
     """Server-sent events: each new event as `event: ev`, plus run state.
@@ -308,7 +308,7 @@ def test_cases():
 # ------------------------------------------------------- human in the loop
 @app.get("/api/questions")
 def questions(status: str | None = "open"):
-    if workflow_mode()['workflow'] == 'watcher':
+    if workflow_mode()['workflow'] in {'watcher', 'sentinel'}:
         from .watcher import get_watcher
         return [dict(r, question_id=r['request_id'], to_person=r['asked_person_email'], text=r['question'])
                 for run in get_watcher().runs() for r in run['requests']
@@ -319,7 +319,7 @@ def questions(status: str | None = "open"):
 
 @app.post("/api/questions/{question_id}/reply")
 def reply(question_id: str, request: Request, body: dict = Body(...)):
-    if workflow_mode()['workflow'] == 'watcher':
+    if workflow_mode()['workflow'] in {'watcher', 'sentinel'}:
         from .watcher_api import answer, AnswerRequest, call
         payload = call(AnswerRequest.model_validate, {'answer': body.get('text', ''), 'person': body.get('author', '')})
         return answer(question_id, payload)

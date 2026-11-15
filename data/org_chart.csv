@@ -1,0 +1,13 @@
+name,email,title,team,manager_email
+Elena Marsh,elena.marsh@wildguardlabs.org,CEO,Leadership,
+Kofi Mensah, Kofi.Mensah@wildguardlabs.org ,Head of Conservation,Conservation,elena.marsh@wildguardlabs.org
+Mei Tanaka,mei.tanaka@wildguardlabs.org,Wildlife Biologist,Conservation,kofi.mensah@wildguardlabs.org
+Mei T.,mtanaka@wildguardlabs.org,Wildlife Biologist,Conservation,kofi.mensah@wildguardlabs.org
+Carlos Rivera,carlos.rivera@wildguardlabs.org,Field Partnerships,Conservation,kofi.mensah@wildguardlabs.org
+Priya Nair,priya.nair@wildguardlabs.org,Community & Trust,Community,advisor.board@wildguardlabs.org
+Nadia Petrov,nadia.petrov@wildguardlabs.org,CTO,Engineering,elena.marsh@wildguardlabs.org
+Ben Okafor,ben.okafor@wildguardlabs.org,Security Eng,Engineering,nadia.petrov@wildguardlabs.org
+Hannah Lindqvist,hannah.lindqvist@wildguardlabs.org,Backend,Engineering,sofia.duarte@wildguardlabs.org
+Sofia Duarte,sofia.duarte@wildguardlabs.org,Mobile,Engineering,hannah.lindqvist@wildguardlabs.org
+Jamal Reed,jamal.reed@wildguardlabs.org,Data & GIS,Engineering,nadia.petrov@wildguardlabs.org
+Jamal Reed,jamal.reed@wildguardlabs.org,Data & GIS,Engineering,kofi.mensah@wildguardlabs.org

@@ -65,15 +65,19 @@ TABLES = {
                         'name': 'STRING', 'email': 'STRING', 'title': 'STRING', 'team': 'STRING', 'manager_email': 'STRING'},
     'bronze_responsibilities': {'batch_id': 'STRING', 'source': 'STRING', 'source_row': 'INT', 'ingest_timestamp': 'TIMESTAMP',
                               'topic': 'STRING', 'owner_email': 'STRING'},
+    'bronze_person_context': {'batch_id': 'STRING', 'source': 'STRING', 'source_row': 'INT', 'ingest_timestamp': 'TIMESTAMP',
+                            'person_email': 'STRING', 'note': 'STRING'},
+    'person_context': {'batch_id': 'STRING', 'person_email': 'STRING', 'note': 'STRING', 'source': 'STRING', 'ingest_timestamp': 'TIMESTAMP'},
     'silver_people': {'batch_id': 'STRING', 'name': 'STRING', 'title': 'STRING', 'team': 'STRING'},
     'silver_responsibilities': {'batch_id': 'STRING', 'topic': 'STRING', 'owner_email': 'STRING'},
     'nodes': {'batch_id': 'STRING', 'name': 'STRING', 'title': 'STRING', 'team': 'STRING', 'type': 'STRING',
-              'source': 'STRING', 'confidence': 'DOUBLE', 'updated_at': 'TIMESTAMP'},
+              'properties': 'STRING', 'source': 'STRING', 'confidence': 'DOUBLE', 'updated_at': 'TIMESTAMP'},
     'edges': {'batch_id': 'STRING', 'src': 'STRING', 'dst': 'STRING', 'type': 'STRING',
               'source': 'STRING', 'confidence': 'DOUBLE', 'updated_at': 'TIMESTAMP'},
     'quarantine': {'batch_id': 'STRING', 'reason': 'STRING', 'group_id': 'STRING', 'source': 'STRING'},
     'routing_chains': {'batch_id': 'STRING', 'topic': 'STRING', 'owner_email': 'STRING', 'person_email': 'STRING', 'depth': 'INT'},
-    'pipeline_stats': {'batch_id': 'STRING', 'raw_records': 'INT', 'duplicates_merged': 'INT', 'violations_quarantined': 'INT'},
+    'pipeline_stats': {'batch_id': 'STRING', 'raw_records': 'INT', 'raw_people': 'INT', 'unique_people': 'INT',
+                       'duplicates_merged': 'INT', 'violations_quarantined': 'INT', 'quarantined_count': 'INT'},
     'pending_requests': {'request_id': 'STRING', 'run_id': 'STRING', 'asked_person_email': 'STRING', 'question': 'STRING',
                          'status': 'STRING', 'answer': 'STRING', 'created_at': 'TIMESTAMP', 'answered_at': 'TIMESTAMP'},
     'events': {'run_id': 'STRING', 'step': 'INT', 'actor': 'STRING', 'action': 'STRING', 'target_node': 'STRING',
@@ -177,21 +181,29 @@ class DeltaDocuments:
         return doc
 
     def _project_row(self, table, key, record, immutable=False):
+        return self._project_rows(table, [(key, record)], immutable)
+
+    def _project_rows(self, table, rows, immutable=False):
+        if not rows:
+            return
         columns = TABLES[table]
-        values = {'id': key, 'record': json.dumps(record)}
-        expressions = []
-        for col, typ in columns.items():
-            value = record.get(col)
-            values[col] = json.dumps(value) if isinstance(value, (dict, list)) else value
-            expressions.append(f'CAST(:{col} AS {typ}) AS `{col}`')
         names = ['id', *columns, 'record']
+        payload = []
+        for key, record in rows:
+            item = {'id': key, 'record': json.dumps(record)}
+            for col in columns:
+                value = record.get(col)
+                item[col] = json.dumps(value) if isinstance(value, (dict, list)) else value
+            payload.append(item)
+        # One SQL statement per table, rather than one warehouse roundtrip per row.
+        schema = ','.join(f'{name}:{columns.get(name, "STRING")}' for name in names)
         update = '' if immutable else 'WHEN MATCHED THEN UPDATE SET ' + ', '.join(f't.`{k}` = s.`{k}`' for k in names if k != 'id')
         join = 't.id = s.id' + (' AND t.batch_id = s.batch_id' if 'batch_id' in columns else '')
         self.sql(f'''MERGE INTO {self.fq}.`{table}` t USING
-            (SELECT :id AS id, {', '.join(expressions)}, :record AS record) s ON {join}
+            (SELECT inline(from_json(:rows, 'ARRAY<STRUCT<{schema}>>'))) s ON {join}
             {update}
             WHEN NOT MATCHED THEN INSERT ({', '.join(f'`{k}`' for k in names)})
-            VALUES ({', '.join(f's.`{k}`' for k in names)})''', values)
+            VALUES ({', '.join(f's.`{k}`' for k in names)})''', {'rows': json.dumps(payload)})
 
     def project(self, doc):
         with self.lock:
@@ -200,18 +212,24 @@ class DeltaDocuments:
             if doc['id'].startswith('pipeline:'):
                 batch = doc['batch_id']
                 for kind, rows in doc['bronze'].items():
-                    for row in rows:
-                        self._project_row(f'bronze_{kind}', row['row_id'], row, immutable=True)
-                for table in ('silver_people', 'silver_responsibilities', 'nodes', 'edges', 'quarantine', 'routing_chains'):
-                    for row in doc[table]:
-                        self._project_row(table, row['id'], row, immutable=True)
+                    self._project_rows(f'bronze_{kind}', [(row['row_id'], row) for row in rows], immutable=True)
+                for table in ('silver_people', 'silver_responsibilities', 'nodes', 'edges', 'quarantine', 'routing_chains', 'person_context'):
+                    self._project_rows(table, [(row['id'], row) for row in doc.get(table, [])], immutable=True)
                 self._project_row('pipeline_stats', batch, dict(doc['stats'], batch_id=batch), immutable=True)
             elif doc['id'].startswith('run:'):
                 self._project_row('runs', doc['run_id'], doc)
-                for request in doc['requests']:
-                    self._project_row('pending_requests', request['request_id'], request)
-                for event in doc['events']:
-                    self._project_row('events', event['event_id'], event, immutable=True)
+                self._project_rows('pending_requests', [(r['request_id'], r) for r in doc['requests']])
+                self._project_rows('events', [(e['event_id'], e) for e in doc['events']], immutable=True)
+
+    def events(self, run_id):
+        return [json.loads(row[0]) for row in self.sql(
+            f'SELECT record FROM {self.fq}.events WHERE run_id = :run_id ORDER BY step', {'run_id': run_id})]
+
+    def pipeline_rows(self, table, batch_id):
+        if table not in TABLES or 'batch_id' not in TABLES[table]:
+            raise ValueError('Invalid pipeline table')
+        return [json.loads(row[0]) for row in self.sql(
+            f'SELECT record FROM {self.fq}.`{table}` WHERE batch_id = :batch', {'batch': batch_id})]
 
 
 def open_documents():
@@ -220,5 +238,5 @@ def open_documents():
         if not warehouse:
             raise ValueError('AFD_WAREHOUSE_ID is required in Databricks mode')
         return DeltaDocuments(warehouse, os.getenv('AFD_CATALOG', 'workspace'),
-                              os.getenv('AFD_WATCHER_SCHEMA', 'agent_watcher'))
+                              os.getenv('AFD_WATCHER_SCHEMA', 'sentinel_gold'))
     return Documents(Path(os.getenv('AFD_DATA_DIR', 'data')))

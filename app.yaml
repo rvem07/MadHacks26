@@ -2,7 +2,7 @@
 command: ["python", "-m", "afd"]
 env:
   - name: AFD_WORKFLOW
-    value: watcher
+    value: sentinel
   - name: AFD_DATA_DIR
     value: /tmp/afd-data
   - name: AFD_DELTA
@@ -10,7 +10,7 @@ env:
   - name: AFD_CATALOG
     value: workspace
   - name: AFD_WATCHER_SCHEMA
-    value: agent_watcher
+    value: sentinel_gold
   - name: AFD_WAREHOUSE_ID
     valueFrom: sql-warehouse
   - name: AFD_WATCHER_AGENT

@@ -11,6 +11,8 @@ from uuid import uuid4
 from .audit import now_iso
 
 SAMPLE = Path(__file__).resolve().parent.parent / 'samples' / 'badgernet'
+SENTINEL = Path(__file__).resolve().parent.parent / 'data'
+TOPIC_SYNONYMS = {'data breach': 'security incident'}
 
 
 def normalize(value: str) -> str:
@@ -34,8 +36,12 @@ def build_pipeline(directory: Path = SAMPLE) -> dict:
         return value
 
     bronze = {}
-    for kind, fields in [('org_chart', {'name', 'email', 'title', 'team', 'manager_email'}),
-                         ('responsibilities', {'topic', 'owner_email'})]:
+    inputs = [('org_chart', {'name', 'email', 'title', 'team', 'manager_email'}),
+              ('responsibilities', {'topic', 'owner_email'})]
+    sentinel = (directory / 'person_context.csv').exists()
+    if sentinel:
+        inputs.append(('person_context', {'person_email', 'note'}))
+    for kind, fields in inputs:
         path = directory / f'{kind}.csv'
         with path.open(newline='') as f:
             reader = csv.DictReader(f)
@@ -47,6 +53,20 @@ def build_pipeline(directory: Path = SAMPLE) -> dict:
                     raise ValueError(f'{path}:{i}: malformed CSV row')
                 bronze[kind].append(dict(row, source=str(path.name), source_row=i,
                                          ingest_timestamp=now, batch_id=batch, row_id=f'{batch}:{kind}:{i}'))
+    # Infer aliases only for an unambiguous identity match. Never edit bronze.
+    if sentinel:
+        raw_people = bronze['org_chart']
+        for row in sorted(raw_people, key=lambda r: (-len(r['name'].strip()), r['source_row'])):
+            def same_person(other):
+                a, b = normalize(row['name']).rstrip('.'), normalize(other['name']).rstrip('.')
+                prefix = a.startswith(b) or b.startswith(a)
+                return a == b or (prefix and normalize(row['title']) == normalize(other['title']) and email(row['manager_email']) == email(other['manager_email']))
+            matches = {normalize(r['email']) for r in raw_people if same_person(r)}
+            if len(matches) >= 2:
+                preferred = max((r for r in raw_people if normalize(r['email']) in matches),
+                                key=lambda r: (len(r['name'].strip()), -r['source_row']))
+                for alias in matches - {normalize(preferred['email'])}:
+                    aliases[alias] = normalize(preferred['email'])
     groups = defaultdict(list)
     quarantine = []
 
@@ -102,7 +122,8 @@ def build_pipeline(directory: Path = SAMPLE) -> dict:
     routes = []
     topic_rows = defaultdict(list)
     for raw in bronze['responsibilities']:
-        topic_rows[normalize(raw['topic'])].append(raw)
+        topic = normalize(raw['topic'])
+        topic_rows[TOPIC_SYNONYMS.get(topic, topic) if sentinel else topic].append(raw)
     for topic, rows in sorted(topic_rows.items()):
         owners = {email(r['owner_email']) for r in rows if email(r['owner_email']) in groups}
         invalid = not topic or len(owners) != 1 or any(not email(r['owner_email']) or email(r['owner_email']) not in groups for r in rows)
@@ -128,10 +149,44 @@ def build_pipeline(directory: Path = SAMPLE) -> dict:
              'violations_quarantined': len(quarantine), 'violation_counts': dict(Counter(q['reason'] for q in quarantine)),
              'violation_groups': len({(q['reason'], q['group_id']) for q in quarantine}),
              'gold_nodes': len(nodes), 'gold_edges': len(edges), 'owned_topics': len(responsibilities)}
-    return {'id': f'pipeline:{batch}', 'batch_id': batch, 'created_at': now,
+    result = {'id': f'pipeline:{batch}', 'batch_id': batch, 'created_at': now,
             'bronze': bronze, 'silver_people': people, 'silver_responsibilities': responsibilities,
             'nodes': nodes, 'edges': edges, 'quarantine': quarantine, 'routing_chains': routes, 'stats': stats,
             'source_digest': hashlib.sha256(json.dumps(bronze, sort_keys=True).encode()).hexdigest()}
+    if sentinel:
+        review = {q['group_id'] for q in quarantine if q['reason'] in {'missing_manager', 'multiple_managers'}} | set(cycle_members)
+        for person in people:
+            person['needs_review'] = person['id'] in review
+        for node in nodes:
+            node['props']['needs_review'] = node['id'] in review
+            node['properties'] = node['props']
+        result['routing_chains'] = [r for r in routes if r['owner_email'] not in review and r['person_email'] not in review]
+        for responsibility in responsibilities:
+            responsibility['routing_allowed'] = responsibility['owner_email'] not in review
+        def graph_node(nid, typ, name, properties, source):
+            return dict(id=nid, type=typ, name=name, label=name, properties=properties, props=properties,
+                        source=source, confidence=1.0, updated_at=now, batch_id=batch)
+        for team in sorted({p['team'] for p in people}):
+            nodes.append(graph_node('team:' + team, 'team', team, {}, ['org_chart.csv']))
+        owned = {r['topic']: r for r in responsibilities}
+        for topic, rows in sorted(topic_rows.items()):
+            nodes.append(graph_node('topic:' + topic, 'topic', topic,
+                                    {'routing_allowed': bool(owned.get(topic, {}).get('routing_allowed'))},
+                                    [f'{r["source"]}:{r["source_row"]}' for r in rows]))
+        for person in people:
+            edges.append(dict(id='member:' + person['id'], src=person['id'], dst='team:' + person['team'],
+                              type='member_of', source=person['source'], confidence=1.0, updated_at=now, batch_id=batch))
+        for responsibility in responsibilities:
+            edges.append(dict(id='owns:' + responsibility['topic'], src=responsibility['owner_email'],
+                              dst='topic:' + responsibility['topic'], type='responsible_for', source=responsibility['source'],
+                              confidence=1.0, updated_at=now, batch_id=batch))
+        result['person_context'] = [dict(r, id=f'context:{i}', person_email=email(r['person_email']))
+                                    for i, r in enumerate(bronze['person_context'])]
+        stats.update(raw_context=len(bronze['person_context']), unique_people=len(people),
+                     # Repeated Jamal relationship is a conflict, not an identity merge.
+                     duplicates_merged=sum(len({normalize(r['email']) for r in rows}) - 1 for rows in groups.values()),
+                     quarantined_count=stats['violation_groups'], gold_nodes=len(nodes), gold_edges=len(edges))
+    return result
 
 
 def publish_pipeline(documents, directory=SAMPLE):
