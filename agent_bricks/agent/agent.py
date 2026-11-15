@@ -20,7 +20,7 @@ remember or forge it.
 
 Environment
   AFD_APP_URL     base URL of the Agent Flow Debugger app (default http://127.0.0.1:8765)
-  AFD_AGENT_MODEL Databricks serving endpoint for the agent (default databricks-gpt-oss-120b)
+  AFD_AGENT_MODEL Databricks serving endpoint for the agent (default databricks-qwen3-next-80b-a3b-instruct)
 """
 from __future__ import annotations
 
@@ -40,7 +40,9 @@ from databricks_agentkit import workspace_client, workspace_headers
 # that off: run data must stay in Databricks (MLflow tracing + our own events).
 set_tracing_disabled(True)
 
-MODEL = os.getenv("AFD_AGENT_MODEL", "databricks-gpt-oss-120b")
+# Qwen3 Next completed the demo end to end in testing; gpt-oss-120b tended to
+# wander (repeat questions, skip stages). Both are Databricks-hosted.
+MODEL = os.getenv("AFD_AGENT_MODEL", "databricks-qwen3-next-80b-a3b-instruct")
 APP_URL = os.getenv("AFD_APP_URL", "http://127.0.0.1:8765").rstrip("/")
 # ask_human can legitimately block for minutes while a teammate answers.
 TOOL_TIMEOUT_S = float(os.getenv("AFD_TOOL_TIMEOUT_S", "900"))
@@ -53,6 +55,9 @@ def _configure_client() -> None:
     headers = workspace_headers()
     workspace = workspace_client()
     client = AsyncDatabricksOpenAI(workspace_client=workspace)
+    # Pay-per-token endpoints have low workspace QPS limits; a tool-calling loop
+    # hits them. Retry 429s with the client's exponential backoff.
+    client.max_retries = int(os.getenv("AFD_MODEL_MAX_RETRIES", "8"))
     if headers:
         # The scaffold passed default_headers to the constructor, which
         # databricks-openai 0.15 no longer accepts (and with_options() rebuilds

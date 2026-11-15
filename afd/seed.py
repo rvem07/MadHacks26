@@ -227,7 +227,7 @@ def seed_config() -> dict:
                     {"id": "r_require_evidence", "text": "Every claim in the conclusion must cite evidence.",
                      "enabled": True, "check": {"type": "require_evidence"}},
                 ],
-                "escalation": {"ask_timeout_s": 120, "on_timeout": "stop", "max_steps": 10, "stop_when": ""},
+                "escalation": {"ask_timeout_s": 120, "on_timeout": "stop", "max_steps": 20, "stop_when": ""},
                 "apps": {"github": "read"},
             },
         ],

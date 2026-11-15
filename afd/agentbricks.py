@@ -58,7 +58,7 @@ CONTINUE = """You stopped before calling conclude. Here is what you have done so
 
 Continue from where you left off, in the current stage or the next one, and finish with conclude."""
 
-MAX_INVOCATIONS = 2  # one kickoff + one "you haven't concluded" continuation
+MAX_INVOCATIONS = 3  # kickoff + up to two continuations (no conclude, or a failed invocation)
 
 
 def run_with_agentbricks(run: dict, ctx, wrapper, settings: Settings) -> None:
@@ -75,15 +75,27 @@ def run_with_agentbricks(run: dict, ctx, wrapper, settings: Settings) -> None:
     prompt = KICKOFF.format(requester=run["requester"], task=run["task"])
     try:
         for attempt in range(MAX_INVOCATIONS):
-            resp = httpx.post(url, json={"input": [{"role": "user", "content": prompt}], "run_id": run["run_id"]},
-                              headers=_agent_headers(url), timeout=settings.agentbricks_timeout_s)
-            resp.raise_for_status()
-            final = resp.json().get("output", [{}])[-1].get("content", "")
-            # The agent's last message is its own claim (reported); the structured
-            # answer, if any, is the conclude event it emitted through the wrapper.
-            ctx.emit(stage=ctx.stage or "-", actor="agent", action_type="observe", tool=None,
-                     result={"final_message": final, "concluded_via_tool": ctx.concluded, "invocation": attempt + 1},
-                     status="ok", milestone=not ctx.concluded)
+            try:
+                resp = httpx.post(url, json={"input": [{"role": "user", "content": prompt}], "run_id": run["run_id"]},
+                                  headers=_agent_headers(url), timeout=settings.agentbricks_timeout_s)
+                resp.raise_for_status()
+                final = resp.json().get("output", [{}])[-1].get("content", "")
+            except httpx.HTTPStatusError as e:
+                # The agent failed mid-turn (e.g. model rate limit). Its tool calls so
+                # far are already events; record the failure and continue from the log.
+                ctx.emit(stage=ctx.stage or "-", actor="system", action_type="observe", tool=None,
+                         result={"error": f"agent invocation {attempt + 1} failed: HTTP {e.response.status_code}"},
+                         status="error", milestone=True)
+                if attempt == MAX_INVOCATIONS - 1:
+                    raise
+                final = None
+            if final is not None:
+                # The agent's last message is its own claim (reported); the structured
+                # answer, if any, is the conclude event it emitted through the wrapper.
+                ctx.emit(stage=ctx.stage or "-", actor="agent", action_type="observe", tool=None,
+                         result={"final_message": final, "concluded_via_tool": ctx.concluded,
+                                 "invocation": attempt + 1},
+                         status="ok", milestone=not ctx.concluded)
             if ctx.concluded or ctx.stop_reason:
                 break
             log_lines = [f"#{e['seq']} [{e['stage']}] {e['plain_summary']}"

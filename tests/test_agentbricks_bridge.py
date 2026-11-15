@@ -53,3 +53,30 @@ def test_bridge_routes_calls_and_continues_once(store, monkeypatch):
     assert [e["result"]["final_message"] for e in evs if e["tool"] is None] == ["I looked around.", "Concluded."]
     assert mgr.wrapper_for(run["run_id"]) is None  # unregistered when done
     runs_mod._manager = None
+
+
+def test_failed_invocation_is_recorded_and_continued(store, monkeypatch):
+    """A mid-turn failure (e.g. a model 429) becomes an error event, then the run continues."""
+    import httpx
+
+    mgr = reset_manager(store, get_settings())
+    calls = {"n": 0}
+
+    def fake_post(url, json, headers, timeout):
+        rid = json["run_id"]
+        calls["n"] += 1
+        call = lambda tool, **a: ab.call_tool_for_run(rid, tool, {"run_id": rid, **a})  # noqa: E731
+        if calls["n"] == 1:
+            call("begin_stage", stage="triage")
+            req = httpx.Request("POST", url)
+            raise httpx.HTTPStatusError("boom", request=req, response=httpx.Response(500, request=req))
+        call("begin_stage", stage="verify")
+        call("conclude", answer="recovered", claims=[{"text": "ok", "evidence_refs": [f"{rid}:1"]}])
+        return FakeResponse("done")
+
+    monkeypatch.setattr(ab.httpx, "post", fake_post)
+    run = mgr.start("Build the backend for the invoicing feature", "p_leo", host="agentbricks", sync=True)
+    assert run["status"] == "completed" and run["answer"] == "recovered"
+    errors = [e for e in mgr.events(run["run_id"]) if e["status"] == "error"]
+    assert errors and "HTTP 500" in errors[0]["result"]["error"]
+    runs_mod._manager = None

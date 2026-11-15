@@ -79,6 +79,8 @@ class RunContext:
     # edge_id -> warning text for edges corrected in a recent ontology version
     # (e.g. "was Priya, stale; re-pointed to Marcus in v2 by Dana").
     edge_notes: dict = field(default_factory=dict)
+    # Edge ids the agent has actually seen in traversal results this run.
+    seen_edges: set = field(default_factory=set)
     stop_reason: str | None = None
     concluded: bool = False
 
@@ -121,10 +123,11 @@ class ToolWrapper:
             if level == "none" or (need == "read_write" and level != "read_write"):
                 return self._blocked(name, args, f"app {spec['app']} is '{level}' in stage {ctx.stage}; "
                                                  f"{name} needs '{need}'", started)
-        # 3. step budget (escalation/stop condition)
+        # 3. step budget (escalation/stop condition). conclude is always allowed:
+        #    a budget stops further work, never the report of what was done.
         steps = ctx.stage_steps.get(ctx.stage, 0) + 1
         ctx.stage_steps[ctx.stage] = steps
-        if steps > stage["escalation"].get("max_steps", 30):
+        if name != "conclude" and steps > stage["escalation"].get("max_steps", 30):
             ctx.stop_reason = f"step budget of {stage['escalation']['max_steps']} exhausted in {ctx.stage}"
             return self._blocked(name, args, ctx.stop_reason, started)
 
@@ -244,6 +247,7 @@ class ToolWrapper:
             warnings += w
             node_ids.append(other["id"])
             edge_ids.append(edge["id"])
+            ctx.seen_edges.add(edge["id"])
         return ToolOutcome(result={"node": {"id": node_id, "label": ctx.graph.label(node_id)},
                                    "neighbors": views, "count": len(views)},
                            node_ids=node_ids, edge_ids=edge_ids, focus_node=node_id, warnings=warnings)
@@ -271,6 +275,14 @@ class ToolWrapper:
         if not person or person["type"] != "person":
             raise ValueError(f"{args['person_id']} is not a person in the ontology")
         edge_ids = list(args.get("edge_ids") or [])
+        # Which edge made the agent pick this person? An LLM may cite a context
+        # edge (e.g. "service depends_on doc") instead of the ownership edge. Any
+        # ownership edge from this person that the agent actually traversed is
+        # put first, labeled as inferred, so flags see what the choice relied on.
+        inferred = [eid for eid in sorted(ctx.seen_edges)
+                    if (ed := ctx.graph.edge(eid)) and ed["src"] == person["id"]
+                    and ed["type"] in OWNERSHIP_EDGES and eid not in edge_ids]
+        edge_ids = inferred + edge_ids
         related = [n for e in edge_ids if (ed := ctx.graph.edge(e)) for n in (ed["src"], ed["dst"])]
         node_ids = [person["id"]] + [n for n in related if n != person["id"]]
         timeout = float(stage["escalation"].get("ask_timeout_s", 120))
@@ -280,7 +292,8 @@ class ToolWrapper:
                             mirror_email=mirror)
         ask_ev = ctx.emit(stage=ctx.stage, actor="agent", action_type="ask_human", tool="ask_human",
                           node_ids=node_ids, edge_ids=edge_ids, focus_node=person["id"], input=args,
-                          result={"question_id": q["question_id"], "to": person["label"], "timeout_s": timeout},
+                          result={"question_id": q["question_id"], "to": person["label"], "timeout_s": timeout,
+                                  **({"edges_inferred": inferred} if inferred else {})},
                           status="waiting", milestone=True,
                           external_ids={"gmail_message_id": q["email"]["message_id"]} if q.get("email") else {})
         ctx.channel.store.update("questions", "question_id", q["question_id"], {"seq": ask_ev["seq"]})

@@ -115,7 +115,7 @@ Run the tests and the benchmark:
                          └──────────────────────────────────────────────────────────────────┼──┼────┘
                                                                                             │  │
                     ┌──────── Agent Bricks agent (agent_bricks/, Databricks App) ◀──────────┘  │
-                    │  OpenAI Agents SDK + databricks-gpt-oss-120b                             │
+                    │  OpenAI Agents SDK + databricks-qwen3-next-80b-a3b-instruct              │
                     │  instructions  = GET /api/config/instructions (rendered from rules)      │
                     │  tools         = GET /api/agent-tools, each call ─────────────────────────┘
                     └────────────────────────────────────────────────────────────────────────
@@ -247,7 +247,7 @@ view it in **History**.
 | Host | What drives the agent | Use it for |
 |---|---|---|
 | `scripted` (default) | `afd/policy.py`: a deterministic policy that **reads the config** and acts on the structured checks. It is not a fake: it calls the same tools through the same wrapper. | Reproducible demos, tests, the benchmark. |
-| `agentbricks` | The LLM agent in `agent_bricks/` (Agent Bricks CLI, OpenAI Agents SDK, `databricks-gpt-oss-120b`). | The real LLM-driven agent. |
+| `agentbricks` | The LLM agent in `agent_bricks/` (Agent Bricks CLI, OpenAI Agents SDK, `databricks-qwen3-next-80b-a3b-instruct` by default). | The real LLM-driven agent. |
 
 Pick the host with `AFD_AGENT_HOST`, or per run with `POST /api/runs {"host": "agentbricks"}`.
 
@@ -283,14 +283,19 @@ off (`set_tracing_disabled(True)`), so run data stays in Databricks.
 2. Checks the tool against the stage's **`allowed_tools`**.
 3. Checks the tool's external app against the stage's **app allowlist**: each tool declares `app` and
    `level`. For example, `edit_file` is `github` + `write` and needs `read_write`.
-4. Enforces the stage's **step budget** (`escalation.max_steps`).
+4. Enforces the stage's **step budget** (`escalation.max_steps`). `conclude` is always allowed: a budget
+   stops further work, never the report of what was done.
 5. Runs the tool against the run's **pinned ontology version**. Traversal is limited to the stage's
    allowed node and edge types.
-6. Applies structured rule checks: **stale-owner and low-confidence warnings** on owner edges,
+6. On `ask_human`, records **which edge made the agent pick that person**. An LLM may cite a context edge
+   (for example *service depends_on doc*) instead of the ownership edge. So any ownership edge from that person
+   which the agent actually traversed is attached first and listed in `result.edges_inferred` (inferred). The
+   stale-edge flag then sees what the choice really relied on.
+7. Applies structured rule checks: **stale-owner and low-confidence warnings** on owner edges,
    **recently-corrected** warnings (an edge whose endpoint changed in a later version), **no-revisit**
    blocking, and **require-evidence** on `conclude`.
-7. Decides whether the event is a **milestone** (see section 8).
-8. Emits exactly **one event**. A refused call becomes a `blocked` event and is always a milestone.
+8. Decides whether the event is a **milestone** (see section 8).
+9. Emits exactly **one event**. A refused call becomes a `blocked` event and is always a milestone.
 
 **Repo limits** (`afd/repo.py`): one repo; the agent creates `agent/<task-id>-<run>` and opens a PR.
 Writes to `main` raise `ProtectedBranchError` and become `blocked` events. This holds even if the
@@ -609,7 +614,7 @@ agentbricks deploy                      # deploys as agent-bricks-afd-agent (~3 
 | `AFD_AUTO_REPLY_S` | `-1` | ≥0: simulated teammates answer after N seconds. |
 | `AFD_TODAY` | real date | Pin "today" for staleness math. |
 | `AFD_MLFLOW` | `0` | `1`: MLflow spans per run and per event. |
-| Agent side: `AFD_APP_URL`, `AFD_AGENT_MODEL`, `AFD_TOOL_TIMEOUT_S`, `AFD_MAX_TURNS` | `http://127.0.0.1:8765`, `databricks-gpt-oss-120b`, `900`, `60` | Set in `agent_bricks/`. |
+| Agent side: `AFD_APP_URL`, `AFD_AGENT_MODEL`, `AFD_TOOL_TIMEOUT_S`, `AFD_MAX_TURNS`, `AFD_MODEL_MAX_RETRIES` | `http://127.0.0.1:8765`, `databricks-qwen3-next-80b-a3b-instruct`, `900`, `60`, `8` | Set in `agent_bricks/`. |
 
 ---
 
@@ -639,7 +644,8 @@ agentbricks deploy                      # deploys as agent-bricks-afd-agent (~3 
 ## 15. Tests
 
 ```bash
-.venv/bin/python -m pytest -q       # 21 tests, < 2 s, fully offline
+.venv/bin/python -m pytest -q       # 22 tests, < 2 s, fully offline
+(cd agent_bricks && ../.venv/bin/python -m pytest -q tests)   # the agent's own 3 tests
 ```
 
 - `tests/test_data_layer.py`: the store, ontology versioning, rollback and validation, config ops and
@@ -656,8 +662,11 @@ agentbricks deploy                      # deploys as agent-bricks-afd-agent (~3 
   - An in-app reply unblocks the agent, with attribution.
   - The narrator's grounding rejects invented names and numbers, and the agent's free text never reaches it.
 - `tests/test_benchmark.py`: the benchmark's expected pattern, including the honest wrong-mapping miss.
+- `tests/test_agentbricks_bridge.py`: a fake agent drives the Agent Bricks host through the tool bridge.
+  Calls land in the run, a disallowed call is blocked, a turn that ends without `conclude` gets exactly one
+  continuation, and the agent's end-of-turn messages are recorded.
 
-`agent_bricks/tests/` is the scaffold's own test.
+`agent_bricks/tests/` holds the agent's own tests: the HTTP contract, including `run_id` pass-through.
 
 ---
 
@@ -667,7 +676,7 @@ agentbricks deploy                      # deploys as agent-bricks-afd-agent (~3 
 
 | Open item | Decision |
 |---|---|
-| Models | Agent: `databricks-gpt-oss-120b` via the Agent Bricks agent. Narrator: `databricks-meta-llama-3-1-8b-instruct`. Reviewer: `databricks-gpt-oss-120b`. All are Databricks-hosted, with no external key. A deterministic fallback exists for each. |
+| Models | Agent: `databricks-qwen3-next-80b-a3b-instruct` via the Agent Bricks agent. It completed the demo; `databricks-gpt-oss-120b` tended to wander and skip stages. Narrator: `databricks-meta-llama-3-1-8b-instruct`. Reviewer: `databricks-gpt-oss-120b`. All are Databricks-hosted, with no external key. A deterministic fallback exists for each. For heavy use, put the agent on a **provisioned-throughput** endpoint: the pay-per-token endpoints have low workspace QPS limits that a tool-calling loop can hit (`429 REQUEST_LIMIT_EXCEEDED`). The agent retries with backoff, and the host continues after a failed turn. |
 | Event streaming | Server-sent events from the app's store; Delta receives every event through the write-behind mirror. This was chosen over polling Delta (latency) and Lakebase (extra infrastructure). |
 | Ask timeout and escalation | Per-stage `ask_timeout_s` (120 s). On timeout, escalate to the fresh second source, then stop with `needs_human`. |
 | Rerun and compare | Both are in the demo. |
@@ -687,7 +696,7 @@ agentbricks deploy                      # deploys as agent-bricks-afd-agent (~3 
 | Delta tables, comments and views in `workspace.agent_flow`; live mirror (a demo run's 28 events landed); rebuild from Delta | ✅ verified against the workspace |
 | Genie space creation and the `genie_query` tool; Genie benchmark condition | ✅ verified against the workspace |
 | Hosted model endpoints exist (gpt-oss, Llama, Qwen, Gemma) | ✅ verified (`serving-endpoints list`) |
-| Agent Bricks agent run locally against the app (LLM tool calls through the wrapper) | see the build notes in the commit log |
+| Agent Bricks agent (`agent_bricks/`, run locally) driving the full demo through the wrapper with a real model | ✅ verified with Qwen3 Next 80B. The first run walked task → service → Security specs → **asked Priya**, built HS256 code, opened PR #1, concluded with 5/5 evidence-backed claims; the post-mortem flagged the stale edge and proposed both fixes. After accepting them, the LLM rerun showed the *Recently corrected* warning, **asked Marcus**, and wrote RS256 code in PR #2. That rerun then hit a workspace QPS limit (429) during verify, which led to the retry and continuation hardening (unit-tested). |
 | Deployed Databricks App and deployed Agent Bricks agent; app-to-app OAuth | ⚠️ not deployed in this build; written to the documented pattern |
 | Real GitHub (`AFD_GITHUB_MODE=rest`) | ⚠️ unverified |
 | Gmail sending; Gmail reply reading | ❌ not implemented (dry-run only) |
