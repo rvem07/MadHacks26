@@ -29,4 +29,12 @@ body.sentinel { background:#eef1eb; color:#1e352d; }
 .sentinel #manualToggles label { display:flex; align-items:center; gap:8px; font-size:13px; }
 .sentinel input[type=checkbox] { width:17px; height:17px; accent-color:#285944; }
 .sentinel #error { color:#a03d33; white-space:pre-wrap; }
+.sentinel-plan { margin:18px 0; overflow-wrap:anywhere; }
+.plan-heading { display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap; }
+.sentinel #planMarkdown { line-height:1.65; max-width:1100px; }
+.sentinel #planMarkdown h1 { font-size:24px; }
+.sentinel #planMarkdown h2 { margin-top:24px; }
+.sentinel #planMarkdown h3 { margin-top:18px; }
+.sentinel #planMarkdown li { margin:8px 0; }
+.sentinel a.plan-source { color:#245f9b; text-decoration:underline; font-weight:600; }
 @media(max-width:850px) { .sentinel-shell { padding:14px; } .sentinel-columns { grid-template-columns:1fr; } .sentinel #cy { height:480px; } .sentinel header { flex-wrap:wrap; } .sentinel-stats span { padding:12px; } }

@@ -1,13 +1,50 @@
 # Agent Watcher — WildGuard Labs / Sentinel
 
-Tier 1 incident investigation for a fictional conservation company with exactly ten people. Extends the existing FastAPI app, Cytoscape.js graph, checkpoint store, SQL persistence, and Databricks deployment bundle. Earlier BadgerNet and guided wildlife implementations are retained; their historical instructions are in [docs/legacy-demo.md](docs/legacy-demo.md).
+Tier 1 incident investigation and Tier 2 cited build plans for a fictional conservation company with exactly ten people. Extends the existing FastAPI app, Cytoscape.js graph, checkpoint store, SQL persistence, and Databricks deployment bundle. Earlier BadgerNet and guided wildlife implementations are retained; their historical instructions are in [docs/legacy-demo.md](docs/legacy-demo.md).
 
 Deployed App: **https://agent-watcher-7474649299876234.aws.databricksapps.com** (Databricks authentication required).
+
+## Tier 2: cited build plans
+
+New runs automatically synthesize a structured Sentinel application build plan after the Tier 1 persona answers and excerpt summary are saved. Both **Start run** and **Run all** use this path. The **Plan** panel displays the canonical Markdown, findings link to their source people on the graph, tasks are grouped by owner, and **Download plan.md** downloads the same server-generated Markdown. Task owners glow from persisted `synthesis` events. Existing Tier 1 runs and data are retained; historical completed runs are not silently regenerated.
+
+The plan JSON has `summary` (exactly three sentences), `findings` (`finding`, `source_person_email`), `security_requirements`, 6–8 `tasks` (`title`, `description`, `owner_email`, `topic`), `risks`, and `open_questions`. Schema validation uses Pydantic. Summary sentences and findings must be exact excerpts from collected answers, so these factual fields cannot acquire generated facts. An overlong summary made entirely of source sentences is shortened to three; other schema errors get one bounded repair attempt. Task descriptions, security requirements, and risks also quote source constraints directly; task titles describe proposed workflow features. A separate temperature-0 audit checks the plan against answers and ontology. This audit is an LLM check, not a formal proof; explicit source and owner checks remain deterministic.
+
+The model proposes task topics, never authoritative owners. Each distinct canonical topic is resolved with `who_should_i_ask`; repeated topics reuse that verified route. Code overwrites any model-supplied owner with the ontology owner, validates the person against the pinned Gold nodes and review flags, and logs corrections. Unsafe/unowned topics are flagged with an execution error; no invalid plan is published. Multiple distinct implementation tasks may belong to one topic/owner. Nadia's context can inform work, but her CTO title alone does not create a responsibility assignment.
+
+Unknown facts remain questions. Questions answered explicitly with “I don't know from my context” are always retained by code; source statements explicitly marking unresolved facts are also preserved under open questions; the model also lists unresolved facts in source notes, such as sighting age, viewer identities, coordinate copying, and incident-specific CEO approval. The build plan describes proposed software workflows, not completed implementations or permission to disclose locations.
+
+Plans are physical managed Delta records in **`workspace.sentinel_gold.plans`**, with `run_id`, `plan_json`, `created_at`, and internal projection key/provenance columns. The plan is saved in the atomic checkpoint and projected before the `synthesis` event is exposed. Projection recovery repairs it idempotently. A failed synthesis can be retried without asking personas again. The UI plan API and download read the physical Delta table in deployed mode:
+
+```text
+GET /api/watcher/runs/{run_id}/plan
+GET /api/watcher/runs/{run_id}/plan.md
+```
+
+For an existing Tier 1 deployment, the deployment helper's **`--skip-pipeline`** path creates only the new plans table and redeploys code; it does not ingest another batch or alter existing graph tables:
+
+```bash
+.venv/bin/python scripts/deploy_sentinel.py --warehouse-id YOUR_WAREHOUSE_ID --skip-pipeline
+.venv/bin/python scripts/verify_synthesis_model.py --warehouse-id YOUR_WAREHOUSE_ID
+.venv/bin/python scripts/verify_tier2_browser.py --warehouse-id YOUR_WAREHOUSE_ID
+```
+
+The deployed verifier starts a real Run all and adds the unanswered question “identify the fourteen external viewers by name.” It checks 6–8 safe ontology owners, every finding/source link, graph highlights, open questions, Markdown download, physical Delta equality, and attempts Catalog Explorer itself. It reports interactive SSO separately if the workspace UI does not accept the verifier's OAuth session.
+
+```sql
+SELECT run_id, created_at, plan_json
+FROM workspace.sentinel_gold.plans
+ORDER BY created_at DESC;
+```
+
+Catalog Explorer: [workspace → sentinel_gold → plans](https://dbc-4702f9e0-0c88.cloud.databricks.com/explore/data/workspace/sentinel_gold/plans). In the Columns tab inspect the schema, then use Sample Data or the SQL query above to inspect stored JSON. Normal UC permissions and workspace authentication apply.
+
+Development uses `.worktrees/sentinel-tier2` with the existing interpreter/dependencies shared from the main checkout. Worktrees isolate Git changes only; no worktree path or alternative store is used by the deployed app. Tier 2 results: [docs/tier2-verification.md](docs/tier2-verification.md).
 
 ## Stack and layout
 
 - `afd/main.py`, `afd/watcher_api.py`: FastAPI and event-driven SSE.
-- `afd/watcher.py`, `afd/sentinel.py`: existing workflow host plus Sentinel routing, personas, concurrent questions, manual waiting, and resume.
+- `afd/watcher.py`, `afd/sentinel.py`, `afd/synthesis.py`: existing workflow host plus Sentinel routing, personas, concurrent questions, manual waiting, resume, and validated build-plan synthesis.
 - `afd/pipeline.py`, `afd/watchstore.py`: bronze/silver/gold transforms, Unity Catalog Delta tables, atomic checkpoints and physical projections.
 - `static/sentinel.*`: Cytoscape UI using existing helpers and graph styles; no React/build step.
 - `data/org_chart.csv`, `data/responsibilities.csv`, `data/person_context.csv`: checked-in fictional inputs; no secrets or real animal coordinates.

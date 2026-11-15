@@ -25,8 +25,9 @@ def tokens(text):
 
 def model_json(messages):
     from .llm import chat
+    synthesis = messages[0]['content'].startswith('SYNTHESIZE_SENTINEL_PLAN:')
     result = chat(os.getenv('AFD_WATCHER_MODEL', 'databricks-qwen3-next-80b-a3b-instruct'), messages,
-                  max_tokens=1600, temperature=0, timeout_s=90)
+                  max_tokens=5000 if synthesis else 1600, temperature=0, timeout_s=90)
     result = re.sub(r'^```(?:json)?\s*|\s*```$', '', result.strip())
     return json.loads(result)
 

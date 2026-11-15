@@ -24,6 +24,12 @@ class FixtureModel:
         system = messages[0]['content']
         question = messages[-1]['content']
         self.calls.append(copy.deepcopy(messages))
+        if system.startswith('SYNTHESIZE_SENTINEL_PLAN:'):
+            import json
+            from test_synthesis import fixture_plan
+            return fixture_plan(json.loads(question))
+        if system.startswith('AUDIT_SENTINEL_PLAN:'):
+            return {'supported':True, 'issues':[]}
         if system.startswith('Match the task'):
             topics = ast.literal_eval(system.split('allowed: ')[1])
             topic = 'security incident' if question == 'data breach' else question
@@ -114,7 +120,7 @@ def test_elena_manual_wait_persists_on_restart_and_resumes(sentinel, run_all):
     assert restarted.get(run['run_id'])['revision'] == revision
     done = restarted.answer(pending[0]['request_id'], 'CEO approval is required; no approval recorded for this incident.', ELENA)
     assert done['status'] == 'done'
-    assert done['events'][-2]['action'] == 'human_answer'
+    assert any(e['action'] == 'human_answer' for e in done['events'])
     with pytest.raises(Conflict):
         restarted.answer(pending[0]['request_id'], 'duplicate answer', ELENA)
 

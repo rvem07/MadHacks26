@@ -50,6 +50,8 @@ def main():
     if not principal or not re.fullmatch(r'[a-zA-Z0-9-]+', principal):
         raise RuntimeError('App service principal client ID is unavailable')
     db = DeltaDocuments(warehouse, 'workspace', 'sentinel_gold', client=client)
+    if args.skip_pipeline:
+        db.bootstrap_plans()
     db.sql(f'GRANT USE CATALOG ON CATALOG workspace TO `{principal}`')
     db.sql(f'GRANT USE SCHEMA ON SCHEMA workspace.sentinel_gold TO `{principal}`')
     db.sql(f'GRANT SELECT, MODIFY ON SCHEMA workspace.sentinel_gold TO `{principal}`')

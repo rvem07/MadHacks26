@@ -4,6 +4,7 @@ import json
 
 from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from .watcher import get_watcher
@@ -100,6 +101,18 @@ def run_events(run_id: str):
 @router.get('/runs/{run_id}')
 def get(run_id: str):
     return call(get_watcher().get, run_id)
+
+
+@router.get('/runs/{run_id}/plan')
+def build_plan(run_id: str):
+    return call(get_watcher().build_plan, run_id)
+
+
+@router.get('/runs/{run_id}/plan.md')
+def download_plan(run_id: str):
+    plan = call(get_watcher().build_plan, run_id)
+    return Response(plan['markdown'], media_type='text/markdown',
+                    headers={'Content-Disposition':'attachment; filename="plan.md"'})
 
 
 @router.get('/pending_requests')

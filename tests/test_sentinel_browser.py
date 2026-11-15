@@ -65,6 +65,16 @@ def test_sentinel_browser_with_explicit_fixtures(tmp_path, monkeypatch, request)
             gate.set()
             playwright.expect(page.locator('#runMeta')).to_contain_text('done')
             playwright.expect(page.locator('#summary')).to_contain_text('14 external views')
+            playwright.expect(page.locator('#planStatus')).to_contain_text('7 tasks')
+            assert page.evaluate("S.cy.nodes('.plan-owner').length") >= 1
+            source = page.locator('.plan-source').first
+            email = source.get_attribute('data-person')
+            source.click()
+            assert page.evaluate('(email) => S.cy.getElementById(email).hasClass("source-highlight")', email)
+            with page.expect_download() as download:
+                page.get_by_role('link',name='Download plan.md',exact=True).click()
+            assert download.value.suggested_filename == 'plan.md'
+            assert '## Open questions' in Path(download.value.path()).read_text()
             page.get_by_role('button', name='Reset', exact=True).click()
             with page.expect_response(lambda response: response.url.endswith('/manual') and response.request.method == 'PUT'):
                 page.get_by_role('checkbox', name='Manual mode for Elena Marsh', exact=True).check()

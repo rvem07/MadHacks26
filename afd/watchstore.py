@@ -61,6 +61,7 @@ class Documents:
 
 # Field-level physical Delta projections; the complete record is retained too.
 TABLES = {
+    'plans': {'run_id': 'STRING', 'plan_json': 'STRING', 'created_at': 'TIMESTAMP'},
     'bronze_org_chart': {'batch_id': 'STRING', 'source': 'STRING', 'source_row': 'INT', 'ingest_timestamp': 'TIMESTAMP',
                         'name': 'STRING', 'email': 'STRING', 'title': 'STRING', 'team': 'STRING', 'manager_email': 'STRING'},
     'bronze_responsibilities': {'batch_id': 'STRING', 'source': 'STRING', 'source_row': 'INT', 'ingest_timestamp': 'TIMESTAMP',
@@ -154,6 +155,21 @@ class DeltaDocuments:
             COMMENT 'Filter by topic and ORDER BY depth: owner then successive managers'
             AS SELECT * FROM {self.fq}.routing_chains WHERE batch_id = {active}''')
 
+    def bootstrap_plans(self):
+        """Additive Tier 2 migration; does not ingest data or alter Tier 1 tables."""
+        self.sql(f'''CREATE TABLE IF NOT EXISTS {self.fq}.plans (
+            id STRING NOT NULL COMMENT 'Run identifier; idempotent projection key',
+            run_id STRING COMMENT 'Run whose collected answers produced this plan',
+            plan_json STRING COMMENT 'Validated grounded Sentinel build plan JSON; owners resolved through ontology',
+            created_at TIMESTAMP COMMENT 'UTC synthesis completion time',
+            record STRING COMMENT 'Complete plan projection as JSON',
+            CONSTRAINT plans_pk PRIMARY KEY (id) NOT ENFORCED
+        ) USING DELTA COMMENT 'Sentinel Tier 2 build plans with cited persona findings and validated ontology task owners' ''')
+
+    def get_plan(self, run_id):
+        rows = self.sql(f'SELECT plan_json, CAST(created_at AS STRING) FROM {self.fq}.plans WHERE run_id = :run_id', {'run_id':run_id})
+        return {'plan':json.loads(rows[0][0]), 'created_at':rows[0][1]} if rows else None
+
     def get(self, key):
         rows = self.sql(f'SELECT record FROM {self.fq}.workflow_documents WHERE id = :key', {'key': key})
         return json.loads(rows[0][0]) if rows else None
@@ -218,6 +234,9 @@ class DeltaDocuments:
                 self._project_row('pipeline_stats', batch, dict(doc['stats'], batch_id=batch), immutable=True)
             elif doc['id'].startswith('run:'):
                 self._project_row('runs', doc['run_id'], doc)
+                if doc.get('build_plan'):
+                    self._project_row('plans', doc['run_id'], {'run_id':doc['run_id'],
+                        'plan_json':json.dumps(doc['build_plan']), 'created_at':doc['plan_created_at']}, immutable=True)
                 self._project_rows('pending_requests', [(r['request_id'], r) for r in doc['requests']])
                 self._project_rows('events', [(e['event_id'], e) for e in doc['events']], immutable=True)
 
