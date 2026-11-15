@@ -266,11 +266,91 @@ class DeltaMirror:
             raise RuntimeError(f"insert failed: {state} {resp.status.error}")
 
 
+def hydrate_from_delta(store: LocalStore, catalog: str, schema: str, warehouse_id: str, client=None) -> int:
+    """Rebuild an empty local store from Delta (the system of record).
+
+    Databricks Apps have ephemeral local disk, so after a restart the app
+    reloads ontology/config versions, runs, events, questions, flags,
+    proposals, test cases and the audit log from Delta. Mutable tables keep
+    the latest row per id. Returns the number of rows loaded. Call this
+    BEFORE subscribing the mirror so the reload is not written back.
+    """
+    from databricks.sdk import WorkspaceClient
+
+    w = client or WorkspaceClient()
+    fq = f"`{catalog}`.`{schema}`"
+
+    def q(sql: str) -> list[list]:
+        resp = w.statement_execution.execute_statement(statement=sql, warehouse_id=warehouse_id, wait_timeout="50s")
+        if resp.status.state.value != "SUCCEEDED":
+            raise RuntimeError(f"{resp.status.state.value}: {resp.status.error}")
+        out = list(resp.result.data_array or []) if resp.result else []
+        chunk = resp.result.next_chunk_index if resp.result else None
+        while chunk:  # large results arrive in chunks
+            part = w.statement_execution.get_statement_result_chunk_n(resp.statement_id, chunk)
+            out += list(part.data_array or [])
+            chunk = part.next_chunk_index
+        return out
+
+    loaded = 0
+    nodes: dict[int, list] = {}
+    for v, nid, ntype, label, props in q(f"SELECT ontology_version, node_id, node_type, label, props FROM {fq}.nodes"):
+        nodes.setdefault(int(v), []).append({"id": nid, "type": ntype, "label": label, "props": json.loads(props or "{}")})
+    edges: dict[int, list] = {}
+    for v, eid, src, dst, etype, source, conf, lv, props in q(
+            f"SELECT ontology_version, edge_id, src, dst, edge_type, source, confidence, last_verified, props FROM {fq}.edges"):
+        edges.setdefault(int(v), []).append({"id": eid, "src": src, "dst": dst, "type": etype, "source": source,
+                                             "confidence": float(conf), "last_verified": lv,
+                                             "props": json.loads(props or "{}")})
+    for v, created, author, note in q(f"SELECT DISTINCT version, created_at, author, note FROM {fq}.ontology_versions ORDER BY version"):
+        store._tables["ontology_versions"].append({"version": int(v), "created_at": created, "author": author,
+                                                   "note": note, "nodes": nodes.get(int(v), []),
+                                                   "edges": edges.get(int(v), [])})
+        loaded += 1
+    for v, created, author, note, cfg in q(
+            f"SELECT version, created_at, author, note, config FROM {fq}.agent_config_versions ORDER BY version"):
+        store._tables["agent_config_versions"].append({"version": int(v), "created_at": created, "author": author,
+                                                       "note": note, "config": json.loads(cfg)})
+        loaded += 1
+    for table in ("runs", "questions", "flags", "proposals", "test_cases", "audit_log"):
+        for (record,) in q(f"SELECT record FROM (SELECT record, row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) rn "
+                           f"FROM {fq}.`{table}`) WHERE rn = 1"):
+            store._tables[table].append(json.loads(record))
+            loaded += 1
+    json_cols = ("node_ids", "edge_ids", "input", "result", "decision", "evidence_refs", "external_ids", "warnings", "fidelity")
+    cols = ["run_id", "seq", "event_id", "ts", "stage", "actor", "action_type", "tool", *json_cols[:4], "status",
+            "latency_ms", "decision", "evidence_refs", "milestone", "plain_summary", "narrator", "config_version",
+            "ontology_version", "external_ids", "warnings", "fidelity"]
+    for row in q(f"SELECT {', '.join(cols)} FROM {fq}.events ORDER BY run_id, seq"):
+        ev = dict(zip(cols, row))
+        for c in json_cols:
+            ev[c] = json.loads(ev[c]) if ev[c] else ([] if c.endswith(("ids", "refs", "warnings")) else None)
+        ev["timestamp"] = ev.pop("ts")
+        ev["focus_node"] = (ev["node_ids"] or [None])[0]
+        for c in ("seq", "latency_ms", "config_version", "ontology_version"):
+            ev[c] = int(ev[c])
+        ev["milestone"] = ev["milestone"] in (True, "true")
+        ev["tool"] = ev["tool"] or None
+        store._tables["events"].append(ev)
+        loaded += 1
+    # Runs that were in flight when the app stopped cannot resume.
+    for r in store._tables["runs"]:
+        if r.get("status") == "running":
+            r["status"], r["stop_reason"] = "stopped", "app restarted while the run was in flight"
+    for name in TABLES:
+        store._flush(name)
+    return loaded
+
+
 _store: LocalStore | None = None
 
 
 def get_store() -> LocalStore:
-    """Process-wide store; attaches the Delta mirror when AFD_DELTA is on."""
+    """Process-wide store; attaches the Delta mirror when AFD_DELTA is on.
+
+    With Delta on and an empty local store (e.g. a fresh Databricks App
+    container), the store is first rebuilt from Delta.
+    """
     global _store
     if _store is None:
         from .config import get_settings
@@ -278,6 +358,12 @@ def get_store() -> LocalStore:
         s = get_settings()
         _store = LocalStore(s.data_dir)
         if s.delta_enabled and s.warehouse_id:
+            if not _store.all("ontology_versions"):
+                try:
+                    n = hydrate_from_delta(_store, s.catalog, s.schema, s.warehouse_id)
+                    log.info("rebuilt local store from Delta (%d rows)", n)
+                except Exception:
+                    log.exception("could not rebuild from Delta; starting from the local store")
             try:
                 _store.subscribe(DeltaMirror(s.catalog, s.schema, s.warehouse_id))
             except Exception:

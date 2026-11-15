@@ -16,7 +16,8 @@ Module map (see README.md for the full walkthrough):
     channels    human-in-the-loop channels (in-app primary, Gmail mirror)
     tools       the single tool-wrapper layer every agent action passes through
     policy      the deterministic scripted agent policy (demo / test / benchmark host)
-    agentbricks Databricks Agent Bricks Supervisor Agent host
+    agentbricks Agent Bricks host: invokes the agent in agent_bricks/ and routes its tool calls to the wrapper
+    genie       Genie space as a read-only data tool
     llm         Databricks model-serving client (narrator, reviewer)
     narrator    milestone narration with grounding check + template fallback
     flags       automatic post-mortem flags over trace + ontology

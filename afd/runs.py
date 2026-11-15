@@ -43,6 +43,18 @@ class RunManager:
         self._seq_locks: dict[str, threading.Lock] = {}
         self._threads: dict[str, threading.Thread] = {}
         self._contexts: dict[str, RunContext] = {}
+        # Wrappers of runs currently driven by a remote (Agent Bricks) agent,
+        # so its tool callbacks land in the right run.
+        self._wrappers: dict[str, ToolWrapper] = {}
+
+    def register_wrapper(self, run_id: str, wrapper: ToolWrapper) -> None:
+        self._wrappers[run_id] = wrapper
+
+    def unregister_wrapper(self, run_id: str) -> None:
+        self._wrappers.pop(run_id, None)
+
+    def wrapper_for(self, run_id: str) -> ToolWrapper | None:
+        return self._wrappers.get(run_id)
 
     # ------------------------------------------------------------------ runs
     def start(self, task: str, requester: str, *, rerun_of: str | None = None,
@@ -84,9 +96,9 @@ class RunManager:
                 run["mlflow_trace_id"] = getattr(span, "trace_id", None) or getattr(span, "request_id", None)
             try:
                 if run["host"] == "agentbricks":
-                    from .agentbricks import run_with_supervisor
+                    from .agentbricks import run_with_agentbricks
 
-                    run_with_supervisor(run, ctx, wrapper, self.settings)
+                    run_with_agentbricks(run, ctx, wrapper, self.settings)
                 else:
                     from .policy import ScriptedPolicy
 

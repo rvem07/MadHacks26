@@ -1,0 +1,487 @@
+{
+ "status": "done",
+ "generated_at": "2026-11-15T03:10:24+00:00",
+ "note": "Deterministic harness: every case is a real run through the tool wrapper with the scripted host, in an isolated store. It measures the ontology + rules + fix loop, not an LLM. 'After edit' accepts every AI proposal from the first run, then reruns.",
+ "conditions": [
+  {
+   "id": "no_ontology",
+   "label": "No ontology",
+   "description": "Only the team wiki page (last edited 2025-06)."
+  },
+  {
+   "id": "genie_only",
+   "label": "Genie only",
+   "description": "Asks the Genie space over the company tables; no graph walking."
+  },
+  {
+   "id": "ontology",
+   "label": "Our ontology",
+   "description": "Graph walking with rules v1, as seeded."
+  },
+  {
+   "id": "ontology_after_edit",
+   "label": "Ontology after edit",
+   "description": "Same case after accepting every AI-proposed fix from the first run."
+  }
+ ],
+ "cases": [
+  {
+   "id": "demo_build",
+   "question": "Build the backend for the invoicing feature",
+   "failure": "stale_owner",
+   "expected": "p_marcus",
+   "expected_label": "ask Marcus"
+  },
+  {
+   "id": "stale_owner",
+   "question": "Who should I ask about the security specs?",
+   "failure": "stale_owner",
+   "expected": "p_marcus",
+   "expected_label": "Marcus"
+  },
+  {
+   "id": "conflicting",
+   "question": "Who should I ask about the data retention policy?",
+   "failure": "conflicting_sources",
+   "expected": "p_priya",
+   "expected_label": "Priya"
+  },
+  {
+   "id": "missing_edge",
+   "question": "Who should I ask about the API guidelines?",
+   "failure": "missing_edge",
+   "expected": "p_leo",
+   "expected_label": "Leo"
+  },
+  {
+   "id": "loop",
+   "question": "Who should I ask about the on-call runbook?",
+   "failure": "loop",
+   "expected": "escalated",
+   "expected_label": "escalate (no owner)"
+  },
+  {
+   "id": "wrong_mapping",
+   "question": "Who should I ask about the frontend style guide?",
+   "failure": "wrong_mapping",
+   "expected": "p_sam",
+   "expected_label": "Sam"
+  },
+  {
+   "id": "control_invoice",
+   "question": "Who should I ask about the invoice requirements?",
+   "failure": "none (control)",
+   "expected": "p_dana",
+   "expected_label": "Dana"
+  },
+  {
+   "id": "control_auth",
+   "question": "Who should I ask about the auth service?",
+   "failure": "none (control)",
+   "expected": "p_marcus",
+   "expected_label": "Marcus"
+  }
+ ],
+ "results": {
+  "no_ontology": {
+   "demo_build": {
+    "run_id": "r_3e069aff",
+    "outcome": "escalated",
+    "outcome_label": "escalated",
+    "correct": false,
+    "steps": 4,
+    "claims": 0,
+    "claims_with_evidence": 0,
+    "flags": []
+   },
+   "stale_owner": {
+    "run_id": "r_f42416c3",
+    "outcome": "asked:p_priya",
+    "outcome_label": "asked Priya",
+    "correct": false,
+    "steps": 7,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   },
+   "conflicting": {
+    "run_id": "r_23826132",
+    "outcome": "asked:p_kai",
+    "outcome_label": "asked Kai",
+    "correct": false,
+    "steps": 7,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   },
+   "missing_edge": {
+    "run_id": "r_f11ef72a",
+    "outcome": "asked:p_leo",
+    "outcome_label": "asked Leo",
+    "correct": true,
+    "steps": 7,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   },
+   "loop": {
+    "run_id": "r_f3432bc1",
+    "outcome": "escalated",
+    "outcome_label": "escalated",
+    "correct": true,
+    "steps": 5,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   },
+   "wrong_mapping": {
+    "run_id": "r_cf888488",
+    "outcome": "asked:p_sam",
+    "outcome_label": "asked Sam",
+    "correct": true,
+    "steps": 7,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   },
+   "control_invoice": {
+    "run_id": "r_3a27e9c4",
+    "outcome": "asked:p_dana",
+    "outcome_label": "asked Dana",
+    "correct": true,
+    "steps": 7,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   },
+   "control_auth": {
+    "run_id": "r_c04f11de",
+    "outcome": "asked:p_marcus",
+    "outcome_label": "asked Marcus",
+    "correct": true,
+    "steps": 7,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   }
+  },
+  "genie_only": {
+   "demo_build": {
+    "run_id": "r_765deb7e",
+    "outcome": "asked:p_dana",
+    "outcome_label": "asked Dana",
+    "correct": false,
+    "steps": 8,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": [
+     "blocked_action"
+    ]
+   },
+   "stale_owner": {
+    "run_id": "r_ad3f64c7",
+    "outcome": "asked:p_priya",
+    "outcome_label": "asked Priya",
+    "correct": false,
+    "steps": 7,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   },
+   "conflicting": {
+    "run_id": "r_45043e69",
+    "outcome": "asked:p_priya",
+    "outcome_label": "asked Priya",
+    "correct": true,
+    "steps": 7,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   },
+   "missing_edge": {
+    "run_id": "r_31e6a959",
+    "outcome": "escalated",
+    "outcome_label": "escalated",
+    "correct": false,
+    "steps": 5,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   },
+   "loop": {
+    "run_id": "r_41d2bf7e",
+    "outcome": "escalated",
+    "outcome_label": "escalated",
+    "correct": true,
+    "steps": 5,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   },
+   "wrong_mapping": {
+    "run_id": "r_07dd5dc7",
+    "outcome": "escalated",
+    "outcome_label": "escalated",
+    "correct": false,
+    "steps": 5,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   },
+   "control_invoice": {
+    "run_id": "r_ae529534",
+    "outcome": "asked:p_dana",
+    "outcome_label": "asked Dana",
+    "correct": true,
+    "steps": 7,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   },
+   "control_auth": {
+    "run_id": "r_88e33a3c",
+    "outcome": "asked:p_marcus",
+    "outcome_label": "asked Marcus",
+    "correct": true,
+    "steps": 7,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   }
+  },
+  "ontology": {
+   "demo_build": {
+    "run_id": "r_0f11fad7",
+    "outcome": "asked:p_priya",
+    "outcome_label": "asked Priya",
+    "correct": false,
+    "steps": 24,
+    "claims": 4,
+    "claims_with_evidence": 4,
+    "flags": [
+     "stale_edge_used",
+     "low_confidence_edge"
+    ]
+   },
+   "stale_owner": {
+    "run_id": "r_a5ae93fd",
+    "outcome": "asked:p_priya",
+    "outcome_label": "asked Priya",
+    "correct": false,
+    "steps": 9,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": [
+     "stale_edge_used",
+     "low_confidence_edge"
+    ]
+   },
+   "conflicting": {
+    "run_id": "r_53f01d57",
+    "outcome": "asked:p_kai",
+    "outcome_label": "asked Kai",
+    "correct": false,
+    "steps": 9,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": [
+     "stale_edge_used"
+    ]
+   },
+   "missing_edge": {
+    "run_id": "r_b200a07f",
+    "outcome": "escalated",
+    "outcome_label": "escalated",
+    "correct": false,
+    "steps": 9,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": [
+     "dead_end",
+     "dead_end",
+     "dead_end"
+    ]
+   },
+   "loop": {
+    "run_id": "r_a9a41b78",
+    "outcome": "budget_exhausted",
+    "outcome_label": "budget_exhausted",
+    "correct": false,
+    "steps": 21,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": [
+     "dead_end",
+     "dead_end",
+     "dead_end",
+     "dead_end",
+     "dead_end",
+     "loop",
+     "dead_end",
+     "loop",
+     "loop",
+     "dead_end",
+     "loop",
+     "dead_end",
+     "loop"
+    ]
+   },
+   "wrong_mapping": {
+    "run_id": "r_03101704",
+    "outcome": "escalated",
+    "outcome_label": "escalated",
+    "correct": false,
+    "steps": 9,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": [
+     "dead_end",
+     "dead_end",
+     "dead_end"
+    ]
+   },
+   "control_invoice": {
+    "run_id": "r_5f8e2f2f",
+    "outcome": "asked:p_dana",
+    "outcome_label": "asked Dana",
+    "correct": true,
+    "steps": 9,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   },
+   "control_auth": {
+    "run_id": "r_161ff184",
+    "outcome": "asked:p_marcus",
+    "outcome_label": "asked Marcus",
+    "correct": true,
+    "steps": 9,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   }
+  },
+  "ontology_after_edit": {
+   "demo_build": {
+    "run_id": "r_d170e464",
+    "outcome": "asked:p_marcus",
+    "outcome_label": "asked Marcus",
+    "correct": true,
+    "steps": 24,
+    "claims": 4,
+    "claims_with_evidence": 4,
+    "flags": []
+   },
+   "stale_owner": {
+    "run_id": "r_a3bd3dc0",
+    "outcome": "asked:p_marcus",
+    "outcome_label": "asked Marcus",
+    "correct": true,
+    "steps": 9,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   },
+   "conflicting": {
+    "run_id": "r_1e1ae49c",
+    "outcome": "asked:p_priya",
+    "outcome_label": "asked Priya",
+    "correct": true,
+    "steps": 9,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   },
+   "missing_edge": {
+    "run_id": "r_650a4867",
+    "outcome": "asked:p_leo",
+    "outcome_label": "asked Leo",
+    "correct": true,
+    "steps": 11,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": [
+     "dead_end"
+    ]
+   },
+   "loop": {
+    "run_id": "r_69453335",
+    "outcome": "escalated",
+    "outcome_label": "escalated",
+    "correct": true,
+    "steps": 12,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": [
+     "dead_end",
+     "dead_end",
+     "dead_end",
+     "blocked_action",
+     "loop"
+    ]
+   },
+   "wrong_mapping": {
+    "run_id": "r_c2ccf806",
+    "outcome": "asked:p_leo",
+    "outcome_label": "asked Leo",
+    "correct": false,
+    "steps": 11,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": [
+     "dead_end"
+    ]
+   },
+   "control_invoice": {
+    "run_id": "r_2652dfd3",
+    "outcome": "asked:p_dana",
+    "outcome_label": "asked Dana",
+    "correct": true,
+    "steps": 9,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   },
+   "control_auth": {
+    "run_id": "r_7707c9c2",
+    "outcome": "asked:p_marcus",
+    "outcome_label": "asked Marcus",
+    "correct": true,
+    "steps": 9,
+    "claims": 1,
+    "claims_with_evidence": 1,
+    "flags": []
+   }
+  }
+ },
+ "summary": {
+  "no_ontology": {
+   "accuracy": 0.625,
+   "correct": 5,
+   "total": 8,
+   "evidence_share": 1.0,
+   "avg_steps": 6.375
+  },
+  "genie_only": {
+   "accuracy": 0.5,
+   "correct": 4,
+   "total": 8,
+   "evidence_share": 1.0,
+   "avg_steps": 6.375
+  },
+  "ontology": {
+   "accuracy": 0.25,
+   "correct": 2,
+   "total": 8,
+   "evidence_share": 1.0,
+   "avg_steps": 12.375
+  },
+  "ontology_after_edit": {
+   "accuracy": 0.875,
+   "correct": 7,
+   "total": 8,
+   "evidence_share": 1.0,
+   "avg_steps": 11.75
+  }
+ }
+}

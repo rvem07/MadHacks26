@@ -1,0 +1,34 @@
+# Databricks Apps manifest for the Agent Flow Debugger (see README > Deploy).
+command: ["python", "-m", "afd"]
+env:
+  # Local disk is ephemeral in Databricks Apps; Delta is the system of record.
+  # On start the app rebuilds its working state from Delta, then mirrors every write.
+  - name: AFD_DATA_DIR
+    value: /tmp/afd-data
+  - name: AFD_DELTA
+    value: "1"
+  - name: AFD_CATALOG
+    value: workspace
+  - name: AFD_SCHEMA
+    value: agent_flow
+  # Bind a SQL warehouse as an app resource named "sql-warehouse".
+  - name: AFD_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  # Optional: the Genie space created by scripts/setup_genie.py.
+  - name: AFD_GENIE_SPACE_ID
+    value: ""
+  # Agent host: "scripted" (reproducible demo) or "agentbricks" (LLM agent in agent_bricks/).
+  - name: AFD_AGENT_HOST
+    value: scripted
+  # URL of the deployed Agent Bricks agent (agent-bricks-afd-agent) when using the agentbricks host.
+  - name: AFD_AGENTBRICKS_URL
+    value: ""
+  - name: AFD_NARRATOR
+    value: llm
+  - name: AFD_REVIEWER
+    value: llm
+  # Simulated teammates answer after 4s so judges can try the demo alone; set to -1 for real replies.
+  - name: AFD_AUTO_REPLY_S
+    value: "4"
+  - name: AFD_GMAIL_MODE
+    value: dry_run

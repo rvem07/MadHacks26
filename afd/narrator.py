@@ -67,8 +67,12 @@ def template_sentence(event: dict, graph: Graph) -> str:
     if f["action_type"] == "blocked":
         return f"Blocked {tool}: {res.get('reason', 'not allowed')}."
     if status == "error":
-        return f"The {tool} step failed."
+        return f"The {tool} step failed." if tool else "The agent host failed; see the raw event for the error."
     warn = f" Warning: {f['warnings'][0]}" if f["warnings"] else ""
+    if tool is None and f["action_type"] == "observe":
+        # The LLM agent ended a turn (Agent Bricks host).
+        return "The agent ended its turn without concluding." if not (event.get("result") or {}).get(
+            "concluded_via_tool") else "The agent ended its turn."
     if tool == "begin_stage":
         return f"Started the {f['stage']} stage."
     if tool == "ontology_lookup":

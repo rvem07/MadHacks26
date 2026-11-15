@@ -28,7 +28,7 @@ class Settings:
     data_dir: Path = field(default_factory=lambda: Path(os.environ.get("AFD_DATA_DIR", "data")))
 
     # Which host drives the agent: "scripted" (deterministic policy, default)
-    # or "agentbricks" (Databricks Agent Bricks Supervisor Agent).
+    # or "agentbricks" (the LLM agent in agent_bricks/, built with the Agent Bricks CLI).
     agent_host: str = field(default_factory=lambda: os.environ.get("AFD_AGENT_HOST", "scripted"))
 
     # Narrator: "template" (always available) or "llm" (small hosted model,
@@ -45,10 +45,10 @@ class Settings:
         default_factory=lambda: os.environ.get("AFD_REVIEWER_ENDPOINT", "databricks-gpt-oss-120b")
     )
 
-    # Agent Bricks: the Supervisor Agent this app manages, and the app's public
-    # base URL (needed so the supervisor's tool calls can reach our wrapper).
-    supervisor_name: str = field(default_factory=lambda: os.environ.get("AFD_SUPERVISOR_NAME", "agent-flow-debugger"))
-    supervisor_endpoint: str = field(default_factory=lambda: os.environ.get("AFD_SUPERVISOR_ENDPOINT", ""))
+    # Agent Bricks host: where the agent in agent_bricks/ is served
+    # (`agentbricks dev` locally, or the deployed agent-bricks-afd-agent app URL).
+    agentbricks_url: str = field(default_factory=lambda: os.environ.get("AFD_AGENTBRICKS_URL", "http://127.0.0.1:8000"))
+    agentbricks_timeout_s: float = field(default_factory=lambda: float(os.environ.get("AFD_AGENTBRICKS_TIMEOUT_S", "1200")))
 
     # Delta mirror (Unity Catalog). Off unless explicitly enabled.
     delta_enabled: bool = field(default_factory=lambda: _bool("AFD_DELTA", False))
