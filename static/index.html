@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Flow Debugger</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <!-- Cytoscape.js renders the ontology graph (no build step needed). -->
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span> Agent Flow Debugger <span class="muted">· Lumen Ledger</span></div>
+    <nav class="tabs" id="tabs">
+      <button data-tab="run" class="active">Run</button>
+      <button data-tab="review">Review</button>
+      <button data-tab="editors">Editors</button>
+      <button data-tab="history">History</button>
+      <button data-tab="benchmark">Benchmark</button>
+    </nav>
+    <div class="whoami">
+      <label for="me">You are</label>
+      <select id="me" title="Flat access: everyone can do everything. This is recorded for attribution."></select>
+    </div>
+  </header>
+  <div class="modes" id="modes"></div>
+
+  <!-- ============================== RUN ============================== -->
+  <main id="tab-run" class="tab active">
+    <section class="left">
+      <div class="card composer">
+        <h3>Give the agent a task</h3>
+        <textarea id="task" rows="2">Build the backend for the invoicing feature</textarea>
+        <div class="row">
+          <button id="start" class="primary">Run agent</button>
+          <select id="runPicker" title="Past runs"></select>
+        </div>
+        <div id="runMeta" class="muted small"></div>
+      </div>
+      <div id="inbox"></div>
+      <div class="card log-card">
+        <div class="row between">
+          <h3>What the agent is doing</h3>
+          <label class="small"><input type="checkbox" id="allEvents"> all events</label>
+        </div>
+        <ol id="log" class="log"></ol>
+      </div>
+      <div class="card" id="answerCard" hidden>
+        <h3>Answer <span class="chip reported">reported</span></h3>
+        <p id="answer"></p>
+        <p class="small muted">Click a claim to see the nodes and events that support it.</p>
+        <ul id="claims" class="claims"></ul>
+      </div>
+    </section>
+    <section class="right">
+      <div class="graph-wrap">
+        <div id="cy"></div>
+        <div class="graph-legend" id="legend"></div>
+        <div class="graph-tools">
+          <span id="zoomHint" class="small muted">zoom in to expand actions</span>
+          <button id="fit" class="ghost small">fit</button>
+        </div>
+      </div>
+      <div class="replay card">
+        <div class="row between">
+          <h3>How I got this</h3>
+          <span id="stepLabel" class="small muted"></span>
+        </div>
+        <div class="row">
+          <button id="prev" class="ghost">◀</button>
+          <button id="play" class="ghost">▶ replay</button>
+          <button id="next" class="ghost">▶</button>
+          <input type="range" id="scrub" min="0" max="0" value="0">
+          <button id="live" class="ghost small">live</button>
+        </div>
+      </div>
+      <div class="card" id="detail"><p class="muted">Click a log line or a node to inspect it.</p></div>
+    </section>
+  </main>
+
+  <!-- ============================== REVIEW ============================== -->
+  <main id="tab-review" class="tab">
+    <section class="left">
+      <div class="card">
+        <h3>Post-mortem</h3>
+        <select id="reviewRun"></select>
+        <div id="reviewMeta" class="small muted"></div>
+      </div>
+      <div class="card">
+        <h3>Automatic flags <span class="chip inferred">inferred</span></h3>
+        <ul id="flags" class="flags"></ul>
+      </div>
+      <div class="card">
+        <h3>Mark this run wrong</h3>
+        <textarea id="expected" rows="2" placeholder="What was the right outcome? e.g. It should have asked Marcus, who owns security now."></textarea>
+        <button id="markWrong">Mark wrong</button>
+        <div id="divergence" class="small"></div>
+      </div>
+      <div class="card">
+        <h3>Rerun &amp; compare</h3>
+        <div class="row">
+          <button id="rerun" class="primary">Rerun this task</button>
+          <select id="compareWith"></select>
+          <button id="compareBtn" class="ghost">compare</button>
+        </div>
+        <div id="compare" class="compare"></div>
+      </div>
+    </section>
+    <section class="right">
+      <div class="card">
+        <div class="row between">
+          <h3>Proposed fixes <span class="chip inferred">AI-inferred</span></h3>
+          <button id="reviewAgain" class="ghost small">propose again</button>
+        </div>
+        <p class="small muted">Nothing applies automatically. Accept, edit, or reject each proposal.</p>
+        <div id="proposals"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============================== EDITORS ============================== -->
+  <main id="tab-editors" class="tab">
+    <section class="wide">
+      <div class="card">
+        <div class="row between">
+          <h3>Agent rules <span id="cfgVersion" class="muted small"></span></h3>
+          <div class="row"><input id="cfgNote" placeholder="what changed?"><button id="saveCfg" class="primary">Save rules</button></div>
+        </div>
+        <p class="small muted">Edits apply immediately as a new version. Roll back any time from History.</p>
+        <div id="stages" class="stages"></div>
+      </div>
+      <div class="card">
+        <div class="row between">
+          <h3>Ontology <span id="ontoVersion" class="muted small"></span></h3>
+          <input id="ontoFilter" placeholder="filter…">
+        </div>
+        <h4>Edges <span class="small muted">(provenance: source, confidence, last verified)</span></h4>
+        <div class="table-wrap"><table id="edgesTable"></table></div>
+        <h4>Nodes</h4>
+        <div class="table-wrap"><table id="nodesTable"></table></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============================== HISTORY ============================== -->
+  <main id="tab-history" class="tab">
+    <section class="left">
+      <div class="card"><h3>Ontology versions</h3><ul id="ontoVersions" class="versions"></ul></div>
+      <div class="card"><h3>Rule versions</h3><ul id="cfgVersions" class="versions"></ul></div>
+      <div class="card"><h3>Saved test cases</h3><ul id="testCases" class="versions"></ul></div>
+    </section>
+    <section class="right">
+      <div class="card"><h3>Audit log</h3><div class="table-wrap"><table id="auditTable"></table></div></div>
+      <div class="card"><h3>Agent Bricks instructions (rendered from the current rules)</h3><pre id="instructions" class="md"></pre></div>
+    </section>
+  </main>
+
+  <!-- ============================== BENCHMARK ============================== -->
+  <main id="tab-benchmark" class="tab">
+    <section class="wide">
+      <div class="card">
+        <div class="row between">
+          <h3>Benchmark: does the ontology help?</h3>
+          <button id="benchRun" class="primary">Run benchmark</button>
+        </div>
+        <p class="small muted" id="benchNote"></p>
+        <div id="benchSummary" class="bench-summary"></div>
+        <div class="table-wrap"><table id="benchTable"></table></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
