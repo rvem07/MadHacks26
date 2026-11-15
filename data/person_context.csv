@@ -1,26 +1,11 @@
-person_email,note
-ben.okafor@wildguardlabs.org,Access logs show the public map layer was exposed from 2:10 PM to 4:05 PM with 14 external views.
-ben.okafor@wildguardlabs.org,The layer was unpublished at 4:05 PM.
-ben.okafor@wildguardlabs.org,The logs do not establish who viewed the coordinates or whether anyone copied them.
-mei.tanaka@wildguardlabs.org,Black rhinos range near the north reserve boundary.
-mei.tanaka@wildguardlabs.org,Exposed coordinates from sightings within 48 hours are high risk.
-mei.tanaka@wildguardlabs.org,The sighting timestamp must be checked before assigning the incident a risk level.
-carlos.rivera@wildguardlabs.org,The ranger lead at the partner reserve is reachable by phone.
-carlos.rivera@wildguardlabs.org,The partner alert protocol needs CEO approval first.
-carlos.rivera@wildguardlabs.org,The ranger lead can confirm patrol coverage once an approved alert is delivered.
-elena.marsh@wildguardlabs.org,Policy says disclosure to partners requires CEO approval for incidents with confirmed external views.
-elena.marsh@wildguardlabs.org,Approval should be requested with the confirmed exposure scope and conservation risk.
-elena.marsh@wildguardlabs.org,These notes describe policy and do not record approval for this incident.
-nadia.petrov@wildguardlabs.org,The map layer configuration changed in the last deploy.
-nadia.petrov@wildguardlabs.org,A rollback of that deploy is available.
-nadia.petrov@wildguardlabs.org,Security must verify public access is blocked after any rollback.
-kofi.mensah@wildguardlabs.org,Conservation staff coordinate incident priorities with the reserve team.
-kofi.mensah@wildguardlabs.org,Mei evaluates biological risk and Carlos maintains the ranger contact protocol.
-priya.nair@wildguardlabs.org,Community moderators can hide reports containing precise coordinates.
-priya.nair@wildguardlabs.org,Moderator guidance asks users to share a coarse area instead of exact animal locations.
-hannah.lindqvist@wildguardlabs.org,The backend publishes approved sightings to a separate public map layer.
-hannah.lindqvist@wildguardlabs.org,Backend request logs can help trace the configuration version serving a map request.
-sofia.duarte@wildguardlabs.org,The mobile app supports submitting sightings while offline.
-sofia.duarte@wildguardlabs.org,Mobile previews use a coarse area but queued reports retain the original sighting timestamp.
-jamal.reed@wildguardlabs.org,The GIS pipeline generates separate restricted and public map layers.
-jamal.reed@wildguardlabs.org,Public layers should contain coarse areas and omit precise sighting coordinates.
+email,expertise,context_notes
+amara.okonkwo@fernwoodlabs.io,"approvals, company policy","Managers approve up to 5 consecutive days. Anything over 10 consecutive days needs the CEO. She wants the tool to be Slack-first and simple. No more than 2 people out on the same team at once."
+daniel.reyes@fernwoodlabs.io,"HR policy, time off","Policy: 20 PTO days and 5 sick days per year. PTO requests of 3 or more consecutive days need 2 weeks notice. Sick days need no notice. Max 5 unused PTO days carry over to the next year. Company holidays are tracked separately and don't count against PTO."
+sophie.lindgren@fernwoodlabs.io,"payroll, balances","PTO accrues at about 1.67 days per month. Balances currently live in a Google Sheet called PTO Balances. Payroll runs on the 1st and 15th and needs a CSV export of approved days. Unused days above the carryover cap are forfeited on Dec 31."
+hannah.cho@fernwoodlabs.io,"tech standards, security","Internal tools should be a single-page web app in TypeScript with Google Workspace login. No new paid vendors. Employee data must not be exposed publicly. Keep the codebase small and tested."
+marcus.webb@fernwoodlabs.io,"data model, backend","Suggested data model: requests(id, employee_email, start_date, end_date, type, status, approver_email, created_at). Status values: pending, approved, denied, cancelled. Prefers a small repo with unit tests for the day-counting and balance logic."
+leila.farouk@fernwoodlabs.io,"frontend, calendar UI","Wants a team calendar view showing who is out, with a mobile-friendly layout and keyboard accessibility. Counting days must skip weekends and company holidays."
+tom.aldrich@fernwoodlabs.io,"design","Brand: teal accent (#0F766E), Inter font, lots of white space. Status colors: pending amber, approved green, denied red. One primary action per screen."
+raj.patel@fernwoodlabs.io,"sales, blackout periods","Sales cannot take PTO during the last two weeks of each quarter without his approval. He wants to see the sales team's requests before approving."
+nina.alvarez@fernwoodlabs.io,"customer coverage","At least one Customer Success person must be working at all times. She needs to see overlaps on a team calendar before approving."
+jordan.kim@fernwoodlabs.io,"Slack, Google Calendar","Can add a /timeoff Slack slash command and sync approved days to Google Calendar. Slack notifications should go to the approver and the requester."

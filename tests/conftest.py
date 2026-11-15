@@ -1,25 +1,22 @@
-"""Shared fixtures: every test gets an isolated, freshly seeded store.
-
-AFD_TODAY is pinned to the demo date so edge ages (and therefore staleness
-flags) are deterministic regardless of when the tests run.
-"""
+import copy
+import threading
 import pytest
+from afd.pipeline import build_pipeline
+from afd.watchstore import Conflict
 
-from afd.config import reset_settings
-from afd.seed import seed_all
-from afd.store import reset_store
-
-DEMO_TODAY = "2026-11-14"
-
-
-def pytest_addoption(parser):
-    parser.addoption('--run-sentinel-browser', action='store_true', default=False,
-                     help='Run headless Chrome with a temporary localhost fixture server')
-
+class MemoryDocuments:
+    """Explicit test double only; no production local persistence backend."""
+    mode='test';fq='test'
+    def __init__(self):
+        self.rows={};self.lock=threading.RLock();self.graph_data=build_pipeline('data')
+    def get(self,key): return copy.deepcopy(self.rows.get(key))
+    def list(self,prefix): return [copy.deepcopy(v) for k,v in self.rows.items() if k.startswith(prefix)]
+    def put(self,row,expected_revision=0):
+        if self.rows.get(row['id'],{}).get('revision',0)!=expected_revision: raise Conflict('revision')
+        row=copy.deepcopy(row);row['revision']=expected_revision+1;self.rows[row['id']]=row;return copy.deepcopy(row)
+    def project(self,row): pass
+    def graph(self,batch=None): return copy.deepcopy(self.graph_data)
+    def events(self,rid,after=0): return [e for e in self.get('run:'+rid)['events'] if e['seq']>after]
 
 @pytest.fixture
-def store(tmp_path):
-    reset_settings(data_dir=tmp_path, today_override=DEMO_TODAY, auto_reply_s=-1.0)
-    s = reset_store(tmp_path)
-    seed_all(s)
-    return s
+def db(): return MemoryDocuments()

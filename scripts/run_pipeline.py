@@ -1,50 +1,41 @@
-"""Run locally or as a Databricks Job; input transformations are identical."""
+"""Databricks Job: upload exact inputs to a UC volume, then publish immutable Delta batch."""
 import argparse
+import io
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
-
-# Serverless Python tasks may exec the file without defining __file__.
-# The compiled code filename still identifies the uploaded workspace script.
-entrypoint = Path(globals().get('__file__') or sys._getframe().f_code.co_filename)
-sys.path.insert(0, str(entrypoint.resolve().parent.parent))
-from afd.pipeline import SAMPLE, SENTINEL, publish_pipeline
+entrypoint=Path(globals().get('__file__') or sys._getframe().f_code.co_filename)
+sys.path.insert(0,str(entrypoint.resolve().parent.parent))
+from afd.pipeline import INPUTS,publish_pipeline
 from afd.watchstore import open_documents
 
-
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--directory', type=Path, default=SAMPLE)
-    parser.add_argument('--sentinel', action='store_true', help='Publish WildGuard Labs data; requires Delta')
-    parser.add_argument('--delta', action='store_true')
-    parser.add_argument('--warehouse-id')
-    parser.add_argument('--catalog', default=os.getenv('AFD_CATALOG', 'workspace'))
-    parser.add_argument('--schema', default=os.getenv('AFD_WATCHER_SCHEMA', 'sentinel_gold'))
-    parser.add_argument('--bootstrap', action='store_true', help='Create schema, tables, and routing views')
-    parser.add_argument('--repair', action='store_true', help='Replay durable document projections without ingesting new raw rows')
-    args = parser.parse_args()
-    if args.sentinel:
-        if not args.delta:
-            parser.error('--sentinel requires --delta; no local runtime stand-ins')
-        args.directory = SENTINEL
-    if args.delta:
-        os.environ['AFD_DELTA'] = '1'
-    if args.warehouse_id:
-        os.environ['AFD_WAREHOUSE_ID'] = args.warehouse_id
-    os.environ['AFD_CATALOG'] = args.catalog
-    os.environ['AFD_WATCHER_SCHEMA'] = args.schema
-    db = open_documents()
-    if args.bootstrap and db.mode == 'delta':
-        db.bootstrap()
-    if args.repair:
-        for doc in db.list('pipeline:') + db.list('run:'):
-            db.project(doc)
-        print('Projections repaired. No new batch ingested.')
-        return
-    pipeline = publish_pipeline(db, args.directory)
-    print(json.dumps({'mode': db.mode, 'batch_id': pipeline['batch_id'], **pipeline['stats']}, indent=2))
+    from databricks.sdk.service.catalog import VolumeType
+    p=argparse.ArgumentParser()
+    p.add_argument('--warehouse-id',required=True)
+    p.add_argument('--catalog',default='workspace')
+    p.add_argument('--schema',default='fernwood')
+    args=p.parse_args()
+    os.environ.update(AFD_WAREHOUSE_ID=args.warehouse_id,AFD_CATALOG=args.catalog,AFD_WATCHER_SCHEMA=args.schema)
+    db=open_documents(); db.bootstrap()
+    volume=f'/Volumes/{args.catalog}/{args.schema}/inputs'
+    try: db.client.volumes.read(f'{args.catalog}.{args.schema}.inputs')
+    except Exception as e:
+        if getattr(e,'error_code','') not in ['RESOURCE_DOES_NOT_EXIST','NOT_FOUND']: raise
+        db.client.volumes.create(args.catalog,args.schema,'inputs',VolumeType.MANAGED,comment='Exact Fernwood source CSVs')
+    source=entrypoint.resolve().parent.parent/'data'
+    with tempfile.TemporaryDirectory() as temp:
+        for name in INPUTS:
+            filename=name+'.csv'
+            original=(source/filename).read_bytes()
+            db.client.files.upload(volume+'/'+filename,io.BytesIO(original),overwrite=True)
+            # Pipeline reads back the uploaded volume, not a runtime CSV substitute.
+            downloaded=db.client.files.download(volume+'/'+filename).contents.read()
+            if downloaded!=original: raise ValueError('Volume upload mismatch')
+            (Path(temp)/filename).write_bytes(downloaded)
+        result=publish_pipeline(db,temp,volume)
+    print(json.dumps({'batch_id':result['batch_id'],**result['stats']},indent=2))
 
-
-if __name__ == '__main__':
-    main()
+if __name__=='__main__': main()

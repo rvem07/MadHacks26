@@ -1,0 +1,7 @@
+{
+  "files_scanned": 56,
+  "credential_format_hits": [],
+  "old_scenario_hits": [],
+  "app_log_credential_format_hits": false,
+  "scope": "Current worktree, last1000 App log lines, and separately verified live run; Git history and historical external schemas retained."
+}

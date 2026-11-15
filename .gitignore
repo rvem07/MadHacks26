@@ -8,11 +8,16 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# Local runtime state written by the app (JSON store, simulated repo, benchmark output)
+# Exact pipeline inputs and ignored verification/build artifacts
 data/*
 !data/org_chart.csv
-!data/responsibilities.csv
+!data/collaborations.csv
 !data/person_context.csv
 
 # OS / editor noise
 .DS_Store
+
+.databricks/
+.env
+.env.*
+node_modules/

@@ -1,22 +1,20 @@
-# Databricks App. Local development: python -m afd (without this manifest).
-command: ["python", "-m", "afd"]
+command: ['python', '-m', 'afd']
 env:
-  - name: AFD_WORKFLOW
-    value: sentinel
-  - name: AFD_DATA_DIR
-    value: /tmp/afd-data
-  - name: AFD_DELTA
-    value: "1"
   - name: AFD_CATALOG
     value: workspace
   - name: AFD_WATCHER_SCHEMA
-    value: sentinel_gold
+    value: fernwood
   - name: AFD_WAREHOUSE_ID
     valueFrom: sql-warehouse
-  - name: AFD_WATCHER_AGENT
-    value: databricks
   - name: AFD_WATCHER_MODEL
     valueFrom: agent-model
-  # Enable only after configuring a writable MLflow experiment for the app identity.
-  - name: AFD_MLFLOW
-    value: "0"
+  - name: DWELL_SECONDS
+    value: '3'
+  - name: GIT_FOLDER_PATH
+    value: /Workspace/Users/kaashish.v@gmail.com/.bundle/Test-Repo
+  - name: GITHUB_REPO_URL
+    value: https://github.com/Kman771/Test-Repo
+  - name: GIT_PREFLIGHT_JOB_ID
+    value: '630625523340887'
+  - name: AFD_BUILD_MODEL
+    valueFrom: build-model

@@ -1,91 +1,36 @@
-"""Durable Watcher documents with CAS updates and replayable Delta projections.
-
-One run document is the atomic checkpoint, request history, and event outbox.
-Physical query tables are idempotent projections, never the resume authority.
-"""
-from __future__ import annotations
-
+"""Unity Catalog Delta persistence; existing CAS checkpoints and batched outbox projections."""
 import copy
 import json
 import os
 import re
 import threading
-from pathlib import Path
-from uuid import uuid4
-
 from .audit import now_iso
-
+from uuid import uuid4
 
 class Conflict(ValueError):
     pass
 
-
-class Documents:
-    def __init__(self, directory: Path):
-        self.directory = Path(directory) / 'watcher'
-        self.directory.mkdir(parents=True, exist_ok=True)
-        self.lock = threading.RLock()
-        self.mode = 'local'
-
-    def get(self, key):
-        path = self.directory / f'{key}.json'
-        with self.lock:
-            return json.loads(path.read_text()) if path.exists() else None
-
-    def list(self, prefix):
-        with self.lock:
-            return [json.loads(p.read_text()) for p in sorted(self.directory.glob(f'{prefix}*.json'))]
-
-    def put(self, document, expected_revision=0):
-        import fcntl
-        doc = copy.deepcopy(document)
-        with self.lock, (self.directory / '.write.lock').open('a') as handle:
-            fcntl.flock(handle, fcntl.LOCK_EX)
-            previous = self.get(doc['id'])
-            if (previous or {}).get('revision', 0) != expected_revision:
-                raise Conflict('State changed; refresh and retry.')
-            doc['revision'] = expected_revision + 1
-            doc['updated_at'] = now_iso()
-            path = self.directory / f'{doc["id"]}.json'
-            temp = path.with_suffix(f'.{uuid4().hex}.tmp')
-            with temp.open('w') as f:
-                json.dump(doc, f)
-                f.flush()
-                os.fsync(f.fileno())
-            temp.replace(path)
-        return doc
-
-    def project(self, doc):
-        pass  # Local reads use authoritative documents directly.
-
-
-# Field-level physical Delta projections; the complete record is retained too.
-TABLES = {
-    'plans': {'run_id': 'STRING', 'plan_json': 'STRING', 'created_at': 'TIMESTAMP'},
-    'bronze_org_chart': {'batch_id': 'STRING', 'source': 'STRING', 'source_row': 'INT', 'ingest_timestamp': 'TIMESTAMP',
-                        'name': 'STRING', 'email': 'STRING', 'title': 'STRING', 'team': 'STRING', 'manager_email': 'STRING'},
-    'bronze_responsibilities': {'batch_id': 'STRING', 'source': 'STRING', 'source_row': 'INT', 'ingest_timestamp': 'TIMESTAMP',
-                              'topic': 'STRING', 'owner_email': 'STRING'},
-    'bronze_person_context': {'batch_id': 'STRING', 'source': 'STRING', 'source_row': 'INT', 'ingest_timestamp': 'TIMESTAMP',
-                            'person_email': 'STRING', 'note': 'STRING'},
-    'person_context': {'batch_id': 'STRING', 'person_email': 'STRING', 'note': 'STRING', 'source': 'STRING', 'ingest_timestamp': 'TIMESTAMP'},
-    'silver_people': {'batch_id': 'STRING', 'name': 'STRING', 'title': 'STRING', 'team': 'STRING'},
-    'silver_responsibilities': {'batch_id': 'STRING', 'topic': 'STRING', 'owner_email': 'STRING'},
-    'nodes': {'batch_id': 'STRING', 'name': 'STRING', 'title': 'STRING', 'team': 'STRING', 'type': 'STRING',
-              'properties': 'STRING', 'source': 'STRING', 'confidence': 'DOUBLE', 'updated_at': 'TIMESTAMP'},
-    'edges': {'batch_id': 'STRING', 'src': 'STRING', 'dst': 'STRING', 'type': 'STRING',
-              'source': 'STRING', 'confidence': 'DOUBLE', 'updated_at': 'TIMESTAMP'},
-    'quarantine': {'batch_id': 'STRING', 'reason': 'STRING', 'group_id': 'STRING', 'source': 'STRING'},
-    'routing_chains': {'batch_id': 'STRING', 'topic': 'STRING', 'owner_email': 'STRING', 'person_email': 'STRING', 'depth': 'INT'},
-    'pipeline_stats': {'batch_id': 'STRING', 'raw_records': 'INT', 'raw_people': 'INT', 'unique_people': 'INT',
-                       'duplicates_merged': 'INT', 'violations_quarantined': 'INT', 'quarantined_count': 'INT'},
-    'pending_requests': {'request_id': 'STRING', 'run_id': 'STRING', 'asked_person_email': 'STRING', 'question': 'STRING',
-                         'status': 'STRING', 'answer': 'STRING', 'created_at': 'TIMESTAMP', 'answered_at': 'TIMESTAMP'},
-    'events': {'run_id': 'STRING', 'step': 'INT', 'actor': 'STRING', 'action': 'STRING', 'target_node': 'STRING',
-               'edge': 'STRING', 'result_summary': 'STRING', 'state': 'STRING', 'timestamp': 'TIMESTAMP'},
-    'runs': {'run_id': 'STRING', 'status': 'STRING', 'task': 'STRING', 'batch_id': 'STRING', 'updated_at': 'TIMESTAMP'},
+META={'batch_id':'STRING','source_file':'STRING','source_row':'INT','ingested_at':'TIMESTAMP'}
+PERSON={'batch_id':'STRING','type':'STRING','name':'STRING','title':'STRING','team':'STRING',
+        'expertise':'STRING','context_notes':'STRING','needs_review':'BOOLEAN','review_reason':'STRING',
+        'source':'STRING','confidence':'DOUBLE','updated_at':'TIMESTAMP'}
+EDGE={'batch_id':'STRING','src':'STRING','dst':'STRING','type':'STRING','context':'STRING',
+      'status':'STRING','source':'STRING','confidence':'DOUBLE','updated_at':'TIMESTAMP'}
+TABLES={
+ 'raw_files':{'batch_id':'STRING','filename':'STRING','content':'STRING','sha256':'STRING','source_file':'STRING','ingested_at':'TIMESTAMP'},
+ 'bronze_org_chart':{**META,**{k:'STRING' for k in ['name','email','title','team','manager_email']}},
+ 'bronze_collaborations':{**META,**{k:'STRING' for k in ['person_a','person_b','context']}},
+ 'bronze_person_context':{**META,**{k:'STRING' for k in ['email','expertise','context_notes']}},
+ 'silver_people':PERSON,'silver_relationships':EDGE,'nodes':PERSON,'edges':EDGE,
+ 'quarantine':{'batch_id':'STRING','record_type':'STRING','record_key':'STRING','reason':'STRING','candidate_values':'STRING','created_at':'TIMESTAMP'},
+ 'pipeline_stats':{'batch_id':'STRING',**{k:'INT' for k in ['raw_people_rows','unique_people','fuzzy_duplicates_merged','exact_duplicates_collapsed','relationships_quarantined','raw_collab_rows','valid_collab_edges']},'run_at':'TIMESTAMP'},
+ 'runs':{'run_id':'STRING','status':'STRING','task':'STRING','batch_id':'STRING','created_at':'TIMESTAMP'},
+ 'events':{'run_id':'STRING','seq':'INT','ts':'TIMESTAMP','type':'STRING','actor':'STRING','target_person':'STRING','payload':'STRING','duration_ms':'BIGINT'},
+ 'run_context':{'run_id':'STRING','person_email':'STRING','question':'STRING','answer':'STRING','cached':'BOOLEAN','created_at':'TIMESTAMP'},
+ 'persona_cache':{'person_email':'STRING','question_hash':'STRING','answer':'STRING','created_at':'TIMESTAMP'},
+ 'research':{'run_id':'STRING','query':'STRING','url':'STRING','title':'STRING','key_points':'STRING','created_at':'TIMESTAMP'},
+ 'artifacts':{'run_id':'STRING','path':'STRING','content':'STRING','created_at':'TIMESTAMP'},
 }
-
 
 class DeltaDocuments:
     """Synchronous SQL persistence. Failures propagate; no local-only fallback.
@@ -103,6 +48,7 @@ class DeltaDocuments:
         self.fq = f'`{catalog}`.`{schema}`'
         self.lock = threading.RLock()
         self.mode = 'delta'
+        self._projected = {}
 
     def sql(self, statement, values=None):
         from databricks.sdk.service.sql import StatementParameterListItem
@@ -130,45 +76,24 @@ class DeltaDocuments:
         return rows
 
     def bootstrap(self):
-        self.sql(f'CREATE SCHEMA IF NOT EXISTS {self.fq} COMMENT \'Agent Watcher workflow and bronze silver gold data\'')
-        self.sql(f'''CREATE TABLE IF NOT EXISTS {self.fq}.workflow_documents (
-            id STRING NOT NULL COMMENT 'Stable checkpoint or pipeline document identifier',
-            revision BIGINT COMMENT 'Compare-and-swap revision',
-            token STRING COMMENT 'Writer operation identifier',
-            record STRING COMMENT 'Authoritative checkpoint with request and event outbox',
-            updated_at TIMESTAMP COMMENT 'UTC modification time',
-            CONSTRAINT watcher_document_pk PRIMARY KEY (id) NOT ENFORCED
-        ) USING DELTA COMMENT 'Atomic workflow authority; projections can be repaired from these records' ''')
-        for table, columns in TABLES.items():
-            fields = ', '.join(f'`{k}` {t}' + (' NOT NULL' if k == 'batch_id' else '') + f" COMMENT '{k.replace('_', ' ')}'" for k, t in columns.items())
-            key_columns = 'batch_id, id' if 'batch_id' in columns else 'id'
-            foreign_keys = (f', CONSTRAINT edges_src_fk FOREIGN KEY (batch_id, src) REFERENCES {self.fq}.nodes(batch_id, id) NOT ENFORCED, CONSTRAINT edges_dst_fk FOREIGN KEY (batch_id, dst) REFERENCES {self.fq}.nodes(batch_id, id) NOT ENFORCED' if table == 'edges' else '')
-            self.sql(f'''CREATE TABLE IF NOT EXISTS {self.fq}.`{table}` (
-                id STRING NOT NULL COMMENT 'Stable row id; person id is normalized email; batch is a separate key',
-                {fields}, record STRING COMMENT 'Complete source record as JSON',
-                CONSTRAINT {table}_pk PRIMARY KEY ({key_columns}) NOT ENFORCED {foreign_keys}
-            ) USING DELTA COMMENT 'Agent Watcher {table}; replayable projection' ''')
-        active = f"get_json_object((SELECT record FROM {self.fq}.workflow_documents WHERE id = 'active_pipeline'), '$.batch_id')"
-        self.sql(f'CREATE OR REPLACE VIEW {self.fq}.nodes_current AS SELECT * FROM {self.fq}.nodes WHERE batch_id = {active}')
-        self.sql(f'CREATE OR REPLACE VIEW {self.fq}.edges_current AS SELECT * FROM {self.fq}.edges WHERE batch_id = {active}')
-        self.sql(f'''CREATE OR REPLACE VIEW {self.fq}.topic_routing
-            COMMENT 'Filter by topic and ORDER BY depth: owner then successive managers'
-            AS SELECT * FROM {self.fq}.routing_chains WHERE batch_id = {active}''')
-
-    def bootstrap_plans(self):
-        """Additive Tier 2 migration; does not ingest data or alter Tier 1 tables."""
-        self.sql(f'''CREATE TABLE IF NOT EXISTS {self.fq}.plans (
-            id STRING NOT NULL COMMENT 'Run identifier; idempotent projection key',
-            run_id STRING COMMENT 'Run whose collected answers produced this plan',
-            plan_json STRING COMMENT 'Validated grounded Sentinel build plan JSON; owners resolved through ontology',
-            created_at TIMESTAMP COMMENT 'UTC synthesis completion time',
-            record STRING COMMENT 'Complete plan projection as JSON',
-            CONSTRAINT plans_pk PRIMARY KEY (id) NOT ENFORCED
-        ) USING DELTA COMMENT 'Sentinel Tier 2 build plans with cited persona findings and validated ontology task owners' ''')
-
-    def get_plan(self, run_id):
-        rows = self.sql(f'SELECT plan_json, CAST(created_at AS STRING) FROM {self.fq}.plans WHERE run_id = :run_id', {'run_id':run_id})
-        return {'plan':json.loads(rows[0][0]), 'created_at':rows[0][1]} if rows else None
+        self.sql(f"CREATE SCHEMA IF NOT EXISTS {self.fq} COMMENT 'Fernwood Agent Watcher: pipeline and event-driven runs'")
+        self.sql(f"""CREATE TABLE IF NOT EXISTS {self.fq}.workflow_documents (
+            id STRING NOT NULL COMMENT 'Checkpoint identifier', revision BIGINT COMMENT 'CAS revision',
+            token STRING COMMENT 'Writer operation ID', record STRING COMMENT 'Checkpoint and durable event outbox',
+            updated_at TIMESTAMP COMMENT 'Last checkpoint write',
+            CONSTRAINT document_pk PRIMARY KEY(id) NOT ENFORCED
+        ) USING DELTA COMMENT 'Recoverable single-writer Fernwood checkpoints'""")
+        for table,columns in TABLES.items():
+            fields=', '.join(f"`{k}` {t}"+(' NOT NULL' if k=='batch_id' else '')+f" COMMENT '{k.replace('_',' ')}'" for k,t in columns.items())
+            keys='batch_id,id' if 'batch_id' in columns else 'id'
+            self.sql(f"""CREATE TABLE IF NOT EXISTS {self.fq}.`{table}` (
+                id STRING NOT NULL COMMENT 'Stable identity within batch or run', {fields},
+                record STRING COMMENT 'Full record and provenance JSON',
+                CONSTRAINT {table}_pk PRIMARY KEY({keys}) NOT ENFORCED
+            ) USING DELTA COMMENT 'Fernwood {table}; idempotent durable projection'""")
+        for table in ['nodes','edges','pipeline_stats']:
+            self.sql(f"""CREATE OR REPLACE VIEW {self.fq}.{table}_current AS SELECT * FROM {self.fq}.{table}
+                WHERE batch_id=get_json_object((SELECT record FROM {self.fq}.workflow_documents WHERE id='active_pipeline'),'$.batch_id')""")
 
     def get(self, key):
         rows = self.sql(f'SELECT record FROM {self.fq}.workflow_documents WHERE id = :key', {'key': key})
@@ -221,41 +146,43 @@ class DeltaDocuments:
             WHEN NOT MATCHED THEN INSERT ({', '.join(f'`{k}`' for k in names)})
             VALUES ({', '.join(f's.`{k}`' for k in names)})''', {'rows': json.dumps(payload)})
 
-    def project(self, doc):
+    def project(self,doc):
         with self.lock:
-            # Always project latest revision to prevent a delayed writer undoing a later transition.
-            doc = self.get(doc['id']) or doc
+            doc=self.get(doc['id']) or doc
             if doc['id'].startswith('pipeline:'):
-                batch = doc['batch_id']
-                for kind, rows in doc['bronze'].items():
-                    self._project_rows(f'bronze_{kind}', [(row['row_id'], row) for row in rows], immutable=True)
-                for table in ('silver_people', 'silver_responsibilities', 'nodes', 'edges', 'quarantine', 'routing_chains', 'person_context'):
-                    self._project_rows(table, [(row['id'], row) for row in doc.get(table, [])], immutable=True)
-                self._project_row('pipeline_stats', batch, dict(doc['stats'], batch_id=batch), immutable=True)
+                for kind,rows in doc['bronze'].items():
+                    self._project_rows('bronze_'+kind,[(r['id'],r) for r in rows],immutable=True)
+                for table in ['raw_files','silver_people','silver_relationships','nodes','edges','quarantine']:
+                    self._project_rows(table,[(r['id'],r) for r in doc[table]],immutable=True)
+                self._project_row('pipeline_stats',doc['batch_id'],dict(doc['stats'],batch_id=doc['batch_id']),immutable=True)
             elif doc['id'].startswith('run:'):
-                self._project_row('runs', doc['run_id'], doc)
-                if doc.get('build_plan'):
-                    self._project_row('plans', doc['run_id'], {'run_id':doc['run_id'],
-                        'plan_json':json.dumps(doc['build_plan']), 'created_at':doc['plan_created_at']}, immutable=True)
-                self._project_rows('pending_requests', [(r['request_id'], r) for r in doc['requests']])
-                self._project_rows('events', [(e['event_id'], e) for e in doc['events']], immutable=True)
+                marker=self._projected.setdefault(doc['id'],{})
+                if marker.get('status')!=doc['status']:
+                    self._project_row('runs',doc['run_id'],{k:doc[k] for k in ['run_id','status','task','batch_id','created_at']})
+                    marker['status']=doc['status']
+                for table in ['run_context','research','artifacts','events']:
+                    rows=doc.get(table,[])
+                    self._project_rows(table,[(r['id'],r) for r in rows[marker.get(table,0):]],immutable=True)
+                    marker[table]=len(rows)
+            elif doc['id'].startswith('cache:'):
+                self._project_row('persona_cache',doc['id'],doc)
 
-    def events(self, run_id):
-        return [json.loads(row[0]) for row in self.sql(
-            f'SELECT record FROM {self.fq}.events WHERE run_id = :run_id ORDER BY step', {'run_id': run_id})]
+    def events(self,run_id,after=0):
+        return [json.loads(r[0]) for r in self.sql(f'SELECT record FROM {self.fq}.events WHERE run_id=:run AND seq>CAST(:after AS INT) ORDER BY seq',{'run':run_id,'after':after})]
 
-    def pipeline_rows(self, table, batch_id):
-        if table not in TABLES or 'batch_id' not in TABLES[table]:
-            raise ValueError('Invalid pipeline table')
-        return [json.loads(row[0]) for row in self.sql(
-            f'SELECT record FROM {self.fq}.`{table}` WHERE batch_id = :batch', {'batch': batch_id})]
+    def pipeline_rows(self,table,batch_id):
+        if table not in TABLES or 'batch_id' not in TABLES[table]: raise ValueError('Unknown data table')
+        return [json.loads(r[0]) for r in self.sql(f'SELECT record FROM {self.fq}.`{table}` WHERE batch_id=:batch',{'batch':batch_id})]
+
+    def graph(self,batch=None):
+        active=self.get('active_pipeline')
+        if not active: raise ValueError('Run the Databricks pipeline first')
+        batch=batch or active['batch_id']
+        return {'batch_id':batch,'nodes':self.pipeline_rows('nodes',batch),
+                'edges':self.pipeline_rows('edges',batch),'stats':self.pipeline_rows('pipeline_stats',batch)[0]}
 
 
 def open_documents():
-    if os.getenv('AFD_DELTA', '0').lower() in {'1', 'true'}:
-        warehouse = os.getenv('AFD_WAREHOUSE_ID')
-        if not warehouse:
-            raise ValueError('AFD_WAREHOUSE_ID is required in Databricks mode')
-        return DeltaDocuments(warehouse, os.getenv('AFD_CATALOG', 'workspace'),
-                              os.getenv('AFD_WATCHER_SCHEMA', 'sentinel_gold'))
-    return Documents(Path(os.getenv('AFD_DATA_DIR', 'data')))
+    warehouse=os.getenv('AFD_WAREHOUSE_ID')
+    if not warehouse: raise ValueError('AFD_WAREHOUSE_ID is required; runtime has no local fallback')
+    return DeltaDocuments(warehouse,os.getenv('AFD_CATALOG','workspace'),os.getenv('AFD_WATCHER_SCHEMA','fernwood'))
