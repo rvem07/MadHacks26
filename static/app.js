@@ -2,7 +2,7 @@
 const $=id=>document.getElementById(id);
 function h(tag,props={},...children){const el=tag==='svg'?document.createElementNS('http://www.w3.org/2000/svg',tag):document.createElement(tag);for(const [key,v] of Object.entries(props)){if(key.startsWith('on'))el.addEventListener(key.slice(2),v);else if(key==='class')el.className=v;else if(key==='checked'||key==='hidden')el[key]=v;else el.setAttribute(key,v)}for(const child of children.flat(Infinity)){if(child!==null&&child!==undefined)el.append(child instanceof Node?child:document.createTextNode(String(child)))}return el}
 async function api(path,options={}){const r=await fetch('/api'+path,{...options,headers:{'Content-Type':'application/json'},body:options.body?JSON.stringify(options.body):undefined});if(!r.ok)throw new Error('Request failed ('+r.status+'). Check Setup or refresh.');return r.json()}
-const state={cy:null,graph:null,run:null,epoch:0,last:0,replay:false,pinned:false,active:null,location:null};
+const state={cy:null,graph:null,run:null,epoch:0,last:0,replay:false,pinned:false,active:null,location:null,stageEntered:0};
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 function link(url,title){try{const u=new URL(url);if(u.protocol!=='https:'||u.username||u.password)return h('span',{},title);return h('a',{href:u.href,target:'_blank',rel:'noopener noreferrer'},title)}catch{return h('span',{},title)}}
@@ -25,6 +25,7 @@ async function boot(){
  for(const name of Object.keys(TABLES))$('dataTabs').append(h('button',{'data-tab':name,onclick:()=>dataTab(name).catch(error)},name));
  const saved=localStorage.getItem('fernwood.run');if(saved){const prior=(await api('/runs')).find(r=>r.run_id===saved);if(prior?.status==='running'){state.run=saved;watch(++state.epoch).catch(error)}else if(prior)replay(saved).catch(error)}
 }
+const STAGE_DWELL={'stage:search':3000,'stage:code':3000};
 const STAGES=[{id:'stage:search',label:'Web search',color:'#8b5cf6'},{id:'stage:code',label:'Coding',color:'#3b82f6'},{id:'stage:github',label:'GitHub',color:'#f59e0b'}];
 function graph(){
  const nodes=state.graph.nodes,ids=new Set(nodes.map(n=>n.id)),valid=state.graph.edges.filter(e=>ids.has(e.src)&&ids.has(e.dst));
@@ -52,7 +53,7 @@ async function setup(){$('setupDialog').showModal();$('setupBody').textContent='
 const TABLES={'Raw CSV':['raw_files'],'Bronze':['bronze_org_chart','bronze_collaborations','bronze_person_context'],'Silver':['silver_people','silver_relationships','quarantine'],'Gold':['nodes','edges','pipeline_stats','quarantine']};
 async function dataTab(name){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('selected',b.dataset.tab===name));$('tableOptions').replaceChildren(...TABLES[name].map(t=>h('button',{onclick:()=>dataTable(t).catch(error)},t.replaceAll('_',' '))));await dataTable(TABLES[name][0])}
 async function dataTable(table){$('tableRows').textContent='Querying Unity Catalog…';const {rows}=await api('/data/'+table);const keys=Array.from(new Set(rows.flatMap(Object.keys)));$('tableRows').replaceChildren(h('table',{},h('caption',{},table+' · '+rows.length+' rows'),h('thead',{},h('tr',{},keys.map(k=>h('th',{},k)))),h('tbody',{},rows.map(row=>h('tr',{},keys.map(k=>h('td',{},k==='content'?h('pre',{},row[k]):typeof row[k]==='object'?JSON.stringify(row[k]):String(row[k]??''))))))))}
-function clearRun(){for(const stage of STAGES)state.cy.getElementById(stage.id).data('label',stage.label);state.last=0;state.active=null;state.location=null;$('timeline').replaceChildren();$('token').hidden=true;$('travel').replaceChildren();state.cy.elements().removeClass('active answered traversed');$('error').textContent=''}
+function clearRun(){for(const stage of STAGES)state.cy.getElementById(stage.id).data('label',stage.label);state.last=0;state.active=null;state.location=null;state.stageEntered=0;$('timeline').replaceChildren();$('token').hidden=true;$('travel').replaceChildren();state.cy.elements().removeClass('active answered traversed');$('error').textContent=''}
 async function start(){const epoch=++state.epoch;clearRun();state.replay=false;$('mode').textContent='LIVE · DELTA';$('mode').classList.remove('replay');$('run').disabled=true;try{const r=await api('/runs',{method:'POST',body:{task:$('task').value,dry_run:$('dry').checked,fresh:$('fresh').checked}});state.run=r.run_id;localStorage.setItem('fernwood.run',r.run_id);await watch(epoch)}catch(e){error(e);$('run').disabled=false}}
 async function watch(epoch){while(epoch===state.epoch){let events;try{events=await api('/runs/'+state.run+'/events?after='+state.last);$('error').textContent=''}catch(e){$('error').textContent='Reconnecting to the App…';await sleep(1000);continue}for(const e of events){if(epoch!==state.epoch)return;await renderEvent(e,epoch);state.last=e.seq;if(e.type==='done'||e.type==='error'){$('run').disabled=false;return}}await sleep(500)}}
 async function replay(id=null){const runs=await api('/runs');const run=id?runs.find(r=>r.run_id===id):(runs.find(r=>r.status==='done')||runs[0]);if(!run)throw new Error('No stored run to replay yet.');const epoch=++state.epoch;clearRun();state.run=run.run_id;state.replay=true;$('mode').textContent='REPLAY';$('mode').classList.add('replay');$('run').disabled=true;const events=await api('/runs/'+state.run+'/events');for(const e of events){if(epoch!==state.epoch)return;await renderEvent(e,epoch);state.last=e.seq}if(epoch===state.epoch){$('run').disabled=false;$('runStatus').textContent='Replay complete · stored events'}}
@@ -62,26 +63,35 @@ function positionPulse(){
  token.style.left=p.x+'px';token.style.top=p.y+'px';
  token.style.width=token.style.height=(n.renderedWidth()+10)+'px';
 }
-function activate(id){state.cy.nodes().removeClass('active');state.active=id;$('token').hidden=!id;if(id){state.cy.getElementById(id).addClass('active');positionPulse()}}
+function activate(id){state.cy.nodes().removeClass('active');state.active=id;$('token').hidden=!id;$('token').classList.toggle('stage-pulse',!!id?.startsWith('stage:'));if(id){state.cy.getElementById(id).addClass('active');positionPulse()}}
+async function settleStage(epoch){
+ const until=state.stageEntered+(STAGE_DWELL[state.location]||0);
+ while(epoch===state.epoch&&performance.now()<until)await sleep(Math.min(100,until-performance.now()));
+ return epoch===state.epoch;
+}
 async function move(e,epoch){
  const p=e.payload,n=state.cy.getElementById(e.target_person);if(!n.length)return;
+ if(state.location!==e.target_person&&!await settleStage(epoch))return;
  activate(null);
  const from=state.cy.getElementById(p.from_person||'');
 
  if(from.length&&!reduced){
-  const ns='http://www.w3.org/2000/svg',path=document.createElementNS(ns,'path');
-  path.setAttribute('class','travel-dash');path.setAttribute('fill','none');$('travel').append(path);
-  const startTime=performance.now(),ms=450;
+  const ns='http://www.w3.org/2000/svg',flight=document.createElementNS(ns,'g'),path=document.createElementNS(ns,'path'),dot=document.createElementNS(ns,'circle');
+  flight.setAttribute('class','travel-flight');path.setAttribute('class','travel-dash');path.setAttribute('fill','none');
+  dot.setAttribute('class','travel-head');dot.setAttribute('r','5');flight.append(path,dot);$('travel').append(flight);
+  const stageTrip=from.hasClass('stage')||n.hasClass('stage');
+  const startTime=performance.now(),ms=stageTrip?950:450;
   await new Promise(resolve=>{function frame(now){
-   if(epoch!==state.epoch){path.remove();resolve();return}
+   if(epoch!==state.epoch){flight.remove();resolve();return}
    const start=from.renderedPosition(),end=n.renderedPosition();
    path.setAttribute('d',`M ${start.x} ${start.y} L ${end.x} ${end.y}`);
-   const length=path.getTotalLength(),t=Math.min(1,(now-startTime)/ms),head=length*t,tail=Math.min(65,head);
+   const length=path.getTotalLength(),t=Math.min(1,(now-startTime)/ms),u=stageTrip?t*t*(3-2*t):t,head=length*u,tail=Math.min(65,head);
+   const point=path.getPointAtLength(head);dot.setAttribute('cx',point.x);dot.setAttribute('cy',point.y);
    path.setAttribute('stroke-dasharray',`${tail} ${length+100}`);path.setAttribute('stroke-dashoffset',String(-(head-tail)));
-   if(t<1)requestAnimationFrame(frame);else{path.classList.add('fading');setTimeout(()=>path.remove(),450);resolve()}
+   if(t<1)requestAnimationFrame(frame);else{flight.classList.add('fading');setTimeout(()=>flight.remove(),500);resolve()}
   }requestAnimationFrame(frame)});
  }
- if(epoch===state.epoch){state.location=e.target_person;activate(e.target_person)}
+ if(epoch===state.epoch){state.location=e.target_person;state.stageEntered=performance.now();activate(e.target_person)}
 }
 async function publishSaved(button){
  button.disabled=true;button.textContent='Starting GitHub publish…';
@@ -108,7 +118,7 @@ async function renderEvent(e,epoch){const p=e.payload||{},person=state.graph.nod
  if(e.type==='test_result')li.append(h('p',{},'Tests: '+p.status),h('details',{},h('summary',{},'Actual test output'),h('pre',{},p.output)));
  if(e.type==='committing')li.append(h('p',{},p.message));
  if(e.type==='committed')li.append(link(p.commit_url,p.message||p.sha));
- if(e.type==='done'){activate(null);if(p.outcome==='dry_run'){const button=h('button',{class:'primary'},'Push these files to GitHub');button.onclick=()=>publishSaved(button);li.append(button)}li.append(h('p',{},p.message||'Build complete.'),p.branch_url?link(p.branch_url,'Open generated app branch ↗'):null);for(const c of p.commits||[])li.append(h('p',{},link(c.commit_url,c.message)));if(p.learned?.length)li.append(h('details',{},h('summary',{},'What the agent learned'),h('ul',{},p.learned.map(r=>h('li',{},r.requirement+' — '+r.source_person_email)))));for(const file of p.files||[])li.append(h('details',{},h('summary',{},file.path),h('pre',{},file.content)))}
+ if(e.type==='done'){if(!await settleStage(epoch))return;activate(null);if(p.outcome==='dry_run'){const button=h('button',{class:'primary'},'Push these files to GitHub');button.onclick=()=>publishSaved(button);li.append(button)}li.append(h('p',{},p.message||'Build complete.'),p.branch_url?link(p.branch_url,'Open generated app branch ↗'):null);for(const c of p.commits||[])li.append(h('p',{},link(c.commit_url,c.message)));if(p.learned?.length)li.append(h('details',{},h('summary',{},'What the agent learned'),h('ul',{},p.learned.map(r=>h('li',{},r.requirement+' — '+r.source_person_email)))));for(const file of p.files||[])li.append(h('details',{},h('summary',{},file.path),h('pre',{},file.content)))}
  $('timeline').append(li);$('timeline').scrollTo({top:$('timeline').scrollHeight,behavior:reduced?'instant':'smooth'});
  if(e.type==='asking')await sleep(Math.min(e.duration_ms||1000,1000)); // Keep old replays at the current demo pace.
 }

@@ -10,3 +10,7 @@
 @media(prefers-reduced-motion:reduce){#token{animation:none;opacity:1}}
 
 #card{border-color:#94a3b8}.legend{flex-wrap:wrap}.legend .stage-key:before{border-color:#8b5cf6}
+
+.travel-head{fill:#22c55e;filter:drop-shadow(0 0 5px #22c55e)}
+.travel-flight{opacity:1}.travel-flight.fading{opacity:0;transition:opacity .5s ease-out}
+#token.stage-pulse{border-radius:14px;background:transparent}
