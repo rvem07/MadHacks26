@@ -178,7 +178,7 @@ def seed_config() -> dict:
             {
                 "name": "triage",
                 "goal": "Understand the task and locate it in the ontology: which task node it is and what it affects.",
-                "allowed_node_types": ["task", "ticket", "service", "team"],
+                "allowed_node_types": ["task", "ticket", "service", "team", "document", "repo_area"],
                 "allowed_edge_types": ["affects", "works_on"],
                 "allowed_tools": ["begin_stage", "ontology_lookup", "ontology_traverse", "record_decision"],
                 "rules": [],
