@@ -275,6 +275,8 @@ class ScriptedPolicy:
         haystack = (str(r.get("text", "")) + " " + str(r.get("rows", ""))).lower()
         people = [n for n in self.ctx.graph.nodes.values() if n["type"] == "person"]
         hits = [p for p in people if p["label"].lower() in haystack or p["id"] in haystack]
+        # The person Genie names first in its answer is its answer.
+        hits.sort(key=lambda p: min(i for i in (haystack.find(p["label"].lower()), haystack.find(p["id"])) if i >= 0))
         if not hits:
             self.outcome = "escalated"
             self.call("record_decision", options=[], chosen="escalate to the requester",
