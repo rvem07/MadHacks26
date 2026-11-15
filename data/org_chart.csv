@@ -1,0 +1,13 @@
+name,email,title,team,manager_email
+Amara Okonkwo,amara.okonkwo@fernwoodlabs.io,CEO & Co-founder,Executive,
+Daniel Reyes,Daniel.Reyes@FernwoodLabs.io ,COO & Head of People,Operations,amara.okonkwo@fernwoodlabs.io
+Hannah Cho,hannah.cho@fernwoodlabs.io,CTO & Co-founder,Engineering,amara.okonkwo@fernwoodlabs.io
+Marcus Webb,marcus.webb@fernwoodlabs.io,Senior Software Engineer,Engineering,hannah.cho@fernwoodlabs.io
+Marc Webb,mwebb@fernwoodlabs.io,Sr. Software Engineer,Engineering,hannah.cho@fernwoodlabs.io
+Leila Farouk,leila.farouk@fernwoodlabs.io,Frontend Engineer,Engineering,hannah.cho@fernwoodlabs.io
+Tom Aldrich,tom.aldrich@fernwoodlabs.io,Design Lead,Design,amara.okonkwo@fernwoodlabs.io
+Sophie Lindgren,sophie.lindgren@fernwoodlabs.io,Finance & Payroll Manager,Operations,daniel.reyes@fernwoodlabs.io
+Raj Patel,raj.patel@fernwoodlabs.io,Head of Sales,Sales,amara.okonkwo@fernwoodlabs.io
+Nina Alvarez,nina.alvarez@fernwoodlabs.io,Customer Success Lead,Customer Success,cx.director@fernwoodlabs.io
+Jordan Kim,jordan.kim@fernwoodlabs.io,Operations Associate,Operations,daniel.reyes@fernwoodlabs.io
+Jordan Kim,jordan.kim@fernwoodlabs.io,Operations Associate,Operations,raj.patel@fernwoodlabs.io

@@ -1,0 +1,32 @@
+{
+  "git_folder_path": "/Workspace/Users/kaashish.v@gmail.com/.bundle/Test-Repo",
+  "repo_url": "https://github.com/Kman771/Test-Repo",
+  "runtime": "Databricks App",
+  "path": "github_api_pending_token",
+  "checks": [
+    {
+      "check": "folder_read",
+      "status": "passed"
+    },
+    {
+      "check": "repos_commit_push",
+      "status": "unsupported",
+      "detail": "The Repos REST API exposes create/read/update/delete, not commit or push. Git CLI access on supported compute requires a separate runtime check."
+    },
+    {
+      "check": "github_network",
+      "status": "passed"
+    },
+    {
+      "check": "github_repo_read",
+      "status": "passed",
+      "http_status": 200,
+      "authenticated": false
+    },
+    {
+      "check": "github_write_credentials",
+      "status": "missing repo-scoped GITHUB_TOKEN secret"
+    }
+  ],
+  "search_configured": false
+}

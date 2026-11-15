@@ -1,0 +1,23 @@
+# Worktrees created for isolated development (never commit their contents)
+.claude/worktrees/
+.worktrees/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Exact pipeline inputs and ignored verification/build artifacts
+data/*
+!data/org_chart.csv
+!data/collaborations.csv
+!data/person_context.csv
+
+# OS / editor noise
+.DS_Store
+
+.databricks/
+.env
+.env.*
+node_modules/

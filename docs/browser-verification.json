@@ -1,0 +1,11 @@
+{
+  "app_url": "https://agent-watcher-7474649299876234.aws.databricksapps.com",
+  "checks": {
+    "people_graph_and_review_relationships": "passed",
+    "data_views_and_quarantine": "passed",
+    "private_browser_live_app": "passed",
+    "mobile_no_horizontal_overflow": "passed"
+  },
+  "errors": [],
+  "setup": "git folder path\n/Workspace/Users/kaashish.v@gmail.com/.bundle/Test-Repo\nrepo url\nhttps://github.com/Kman771/Test-Repo\ngit path\ngithub_api\nsearch provider\nTavily\nsearch configured\nfalse\ngit token configured\ntrue\ndwell seconds\n1\nbranch policy\nagent-run-<timestamp>; main is not enabled\nstorage\nUnity Catalog Delta\nschema\n`workspace`.`fernwood`"
+}

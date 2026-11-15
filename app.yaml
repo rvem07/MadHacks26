@@ -1,0 +1,22 @@
+command: ['python', '-m', 'afd']
+env:
+  - name: AFD_CATALOG
+    value: workspace
+  - name: AFD_WATCHER_SCHEMA
+    value: fernwood
+  - name: AFD_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  - name: AFD_WATCHER_MODEL
+    valueFrom: agent-model
+  - name: DWELL_SECONDS
+    value: '1'
+  - name: GIT_FOLDER_PATH
+    value: /Workspace/Users/kaashish.v@gmail.com/.bundle/Test-Repo
+  - name: GITHUB_REPO_URL
+    value: https://github.com/Kman771/Test-Repo
+  - name: GITHUB_TOKEN
+    valueFrom: github-token
+  - name: GIT_PREFLIGHT_JOB_ID
+    value: '630625523340887'
+  - name: AFD_BUILD_MODEL
+    valueFrom: build-model

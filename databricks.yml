@@ -1,0 +1,65 @@
+bundle:
+  name: agent-watcher
+sync:
+  exclude:
+    - .worktrees/**
+    - .claude/**
+  include:
+    - data/org_chart.csv
+    - data/collaborations.csv
+    - data/person_context.csv
+variables:
+  warehouse_id:
+    description: SQL warehouse
+  catalog:
+    default: workspace
+  watcher_schema:
+    default: fernwood
+  model_endpoint:
+    default: databricks-qwen3-next-80b-a3b-instruct
+resources:
+  jobs:
+    watcher_pipeline:
+      name: Fernwood - bronze silver gold
+      max_concurrent_runs: 1
+      tasks:
+        - task_key: publish_org_graph
+          spark_python_task:
+            python_file: ./scripts/run_pipeline.py
+            parameters: [--warehouse-id, '${var.warehouse_id}', --catalog, '${var.catalog}', --schema, '${var.watcher_schema}']
+          environment_key: pipeline
+      environments:
+        - environment_key: pipeline
+          spec:
+            environment_version: '2'
+            dependencies: ['databricks-sdk>=0.40']
+  apps:
+    watcher:
+      name: agent-watcher
+      description: Fernwood Agent Watcher - people, live context, and real code
+      compute_max_instances: 1
+      compute_min_instances: 1
+      source_code_path: .
+      resources:
+        - name: github-token
+          secret:
+            scope: fernwood
+            key: GITHUB_TOKEN
+            permission: READ
+        - name: sql-warehouse
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: CAN_USE
+        - name: agent-model
+          serving_endpoint:
+            name: ${var.model_endpoint}
+            permission: CAN_QUERY
+
+        - name: build-model
+          serving_endpoint:
+            name: databricks-gpt-oss-120b
+            permission: CAN_QUERY
+
+targets:
+  dev:
+    default: true

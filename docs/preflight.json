@@ -1,0 +1,30 @@
+{
+  "git_folder_path": "/Workspace/Users/kaashish.v@gmail.com/.bundle/Test-Repo",
+  "repo_url": "https://github.com/Kman771/Test-Repo",
+  "runtime": "Databricks App",
+  "path": "unconfigured",
+  "checks": [
+    {
+      "check": "folder_read",
+      "status": "passed"
+    },
+    {
+      "check": "folder_access",
+      "status": "failed",
+      "error": "RESOURCE_DOES_NOT_EXIST",
+      "detail": "The parent folder (/Workspace/Users/kaashish.v@gmail.com/.bundle/Test-Repo) does not exist.",
+      "needed": "Grant the App service principal CAN EDIT for workspace writes and CAN MANAGE for Git operations."
+    },
+    {
+      "check": "repos_commit_push",
+      "status": "unsupported",
+      "detail": "The Repos REST API exposes create/read/update/delete, not commit or push. Git CLI access on supported compute requires a separate runtime check."
+    },
+    {
+      "check": "github_network",
+      "status": "passed"
+    }
+  ],
+  "search_configured": false,
+  "git_probe_run_id": 812951513831154
+}

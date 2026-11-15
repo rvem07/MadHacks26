@@ -1,0 +1,16 @@
+{
+  "run_id": "0ab8ce02f6c54278b192d9c34438aba8",
+  "physical_events_equal_checkpoint": "passed",
+  "distinct_personas": 9,
+  "minimum_dwell_ms": 3000,
+  "grounded_answers": "passed",
+  "unknowns_preserved": 2,
+  "cached_answers_reused": 3,
+  "cache_equality": "passed",
+  "generated_files": 8,
+  "total_lines_including_readme": 154,
+  "readme_attributions": "passed",
+  "generated_tests": "passed",
+  "dry_run_no_commits": "passed",
+  "credential_format_scan": "passed"
+}

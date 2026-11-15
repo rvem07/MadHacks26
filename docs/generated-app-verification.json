@@ -1,0 +1,14 @@
+{
+  "required_ui": "passed",
+  "request_approve_persist_cancel": "passed",
+  "served_model": "databricks-gpt-oss-120b",
+  "code_lines": 132,
+  "logic_tests": {
+    "status": "passed",
+    "exit_code": 0,
+    "runtime": "v24.14.0",
+    "output": "\u2714 weekends and explicit holidays (9.14225ms)\n\u2714 reject invalid and reversed ranges (0.639584ms)\n\u2714 carryover and accrual caps (0.193584ms)\n\u2714 14 day PTO notice and sick exemption (0.1645ms)\n\u2714 quarter blackout boundaries and spanning ranges (0.199209ms)\n\u2714 weekends and explicit holidays (0.113709ms)\n\u2714 reject invalid and reversed ranges (0.10975ms)\n\u2714 carryover and accrual caps (0.082917ms)\n\u2714 14 day PTO notice and sick exemption (0.11425ms)\n\u2714 quarter blackout boundaries and spanning ranges (1.445708ms)\n\u2139 tests 10\n\u2139 suites 0\n\u2139 pass 10\n\u2139 fail 0\n\u2139 cancelled 0\n\u2139 skipped 0\n\u2139 todo 0\n\u2139 duration_ms 20.852042\n\n"
+  },
+  "typescript_vite_build": "passed",
+  "scope": "Served-model preflight using supplied context; separate from deployed run acceptance"
+}

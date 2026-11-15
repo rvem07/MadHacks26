@@ -1,0 +1,19 @@
+{
+  "checks": {
+    "physical_counts": "passed",
+    "quarantine_reasons": "passed",
+    "volume_exact_bytes": "passed",
+    "delta_registration_and_comments": "passed"
+  },
+  "batch_id": "8a5282517a70489596113c3b614a82bd",
+  "stats": {
+    "raw_people_rows": 12,
+    "unique_people": 10,
+    "fuzzy_duplicates_merged": 1,
+    "exact_duplicates_collapsed": 1,
+    "relationships_quarantined": 2,
+    "raw_collab_rows": 8,
+    "valid_collab_edges": 8
+  },
+  "catalog_ui": "not yet visually verified"
+}
