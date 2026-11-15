@@ -479,3 +479,18 @@ def test_fallback_event_cache_expires_and_local_commit_invalidates(db,monkeypatc
     w.event(doc,'asking');assert len(w.events(rid))==1 and len(calls)==2
     for i in range(40):w.cache_events({'run_id':str(i),'events':[]})
     assert len(w._events)==32
+
+
+def test_slow_history_read_does_not_block_live_events(db,monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    w=Watcher(db,background=False);rid=w.start()['run_id'];doc=w.get(rid);w.event(doc,'asking')
+    entered=threading.Event();release=threading.Event()
+    def slow(*args): entered.set();assert release.wait(5);return []
+    monkeypatch.setattr(db,'events',slow)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        history=pool.submit(w.events,'old')
+        assert entered.wait(2)
+        try: assert len(pool.submit(w.events,rid).result(timeout=1))==1
+        finally:release.set()
+        assert history.result()==[]

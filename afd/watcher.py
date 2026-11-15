@@ -57,6 +57,7 @@ class Watcher:
         self.dwell=max(0.0,float(os.getenv('DWELL_SECONDS','1'))) if dwell is None else dwell
         self.lock=threading.RLock(); self.workers={}
         self._event_lock=threading.RLock(); self._events=OrderedDict()
+        self._event_ready=threading.Condition(self._event_lock); self._event_reads=set()
         from .ingestion import Ingestor
         self.ingestor=Ingestor(db,background)
 
@@ -78,14 +79,26 @@ class Watcher:
             while len(self._events)>32: self._events.popitem(last=False)
 
     def events(self,rid,after=0):
-        with self._event_lock:
+        with self._event_ready:
+            while rid in self._event_reads: self._event_ready.wait()
             cached=self._events.get(rid)
-            if cached is None or cached[0]<time.monotonic():
-                rows=self.db.events(rid,0)
-                self._events[rid]=(time.monotonic()+1,rows)
+            if cached is not None and cached[0]>=time.monotonic():
+                self._events.move_to_end(rid)
+                return copy.deepcopy([e for e in cached[1] if e['seq']>after])
+            self._event_reads.add(rid)
+        try:
+            rows=self.db.events(rid,0)
+            with self._event_ready:
+                # A commit during the read wins over its older SQL snapshot.
+                cached=self._events.get(rid)
+                if cached is None or cached[0]!=float('inf'):
+                    self._events[rid]=(time.monotonic()+1,rows)
+                self._events.move_to_end(rid)
                 while len(self._events)>32: self._events.popitem(last=False)
-            self._events.move_to_end(rid)
-            return copy.deepcopy([e for e in self._events[rid][1] if e['seq']>after])
+                return copy.deepcopy([e for e in self._events[rid][1] if e['seq']>after])
+        finally:
+            with self._event_ready:
+                self._event_reads.discard(rid); self._event_ready.notify_all()
 
     def event(self,doc,typ,payload=None,target=None,duration_ms=0,actor='agent'):
         if typ not in EVENT_TYPES: raise ValueError('Invalid event type')
