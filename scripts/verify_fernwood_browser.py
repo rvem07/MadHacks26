@@ -56,13 +56,15 @@ with sync_playwright() as pw:
    report['test_results']=[e['payload'] for e in events if e['type']=='test_result']
    report['outcome']={k:v for k,v in events[-1]['payload'].items() if k not in ['files','tests']};report['checks']['dry_run_generation']='passed' if events[-1]['type']=='done' else 'failed'
    assert not any(e['type']=='committed' for e in events)
-   count=len(events);page.click('#replay');expect(page.locator('#mode')).to_have_text('REPLAY')
+   count=len(events);page.click('#replay');expect(page.locator('#mode')).to_contain_text('HISTORY')
    page.wait_for_function("document.querySelector('#runStatus').textContent.includes('Replay complete')",timeout=180000)
    assert page.locator('#timeline .event').count()==count
    report['checks']['replay']='passed'
    page.screenshot(path='data/fernwood-run.png',full_page=True)
   if a.run or a.run_id:
-   page.evaluate('(id)=>localStorage.setItem("fernwood.run",id)',report['run_id']);page.reload();expect(page.locator('#mode')).to_have_text('REPLAY');report['checks']['completed_refresh_labeled_replay']='passed'
+   page.evaluate('(id)=>localStorage.setItem("fernwood.run",id)',report['run_id']);page.reload();expect(page.locator('#runStatus')).to_contain_text('Previous run saved',timeout=90000)
+   assert page.evaluate('state.replay') is False
+   report['checks']['completed_refresh_does_not_replay']='passed'
   page.set_viewport_size({'width':390,'height':844});page.screenshot(path='data/fernwood-mobile.png',full_page=True)
   report['checks']['mobile_no_horizontal_overflow']='passed' if page.evaluate('document.documentElement.scrollWidth<=innerWidth') else 'failed'
  finally:
