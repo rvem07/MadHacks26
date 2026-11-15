@@ -4,61 +4,8 @@
     "people_graph_and_review_relationships": "passed",
     "data_views_and_quarantine": "passed",
     "private_browser_live_app": "passed",
-    "live_personas_and_dwell": "passed",
-    "real_search": "unavailable; no provider key configured",
-    "dry_run_generation": "passed",
-    "replay": "passed",
-    "completed_refresh_labeled_replay": "passed",
     "mobile_no_horizontal_overflow": "passed"
   },
   "errors": [],
-  "setup": "git folder path\n/Workspace/Users/kaashish.v@gmail.com/.bundle/Test-Repo\nrepo url\nhttps://github.com/Kman771/Test-Repo\ngit path\ngithub_api_pending_token\nsearch provider\nTavily\nsearch configured\nfalse\ngit token configured\nfalse\ndwell seconds\n3\nbranch policy\nagent-run-<timestamp>; main is not enabled\nstorage\nUnity Catalog Delta\nschema\n`workspace`.`fernwood`",
-  "run_id": "0ab8ce02f6c54278b192d9c34438aba8",
-  "test_results": [
-    {
-      "status": "passed",
-      "exit_code": 0,
-      "runtime": "v22.23.4",
-      "output": "TAP version 13\n# Subtest: weekends and explicit holidays\nok 1 - weekends and explicit holidays\n  ---\n  duration_ms: 2.022139\n  type: 'test'\n  ...\n# Subtest: reject invalid and reversed ranges\nok 2 - reject invalid and reversed ranges\n  ---\n  duration_ms: 0.318631\n  type: 'test'\n  ...\n# Subtest: carryover and accrual caps\nok 3 - carryover and accrual caps\n  ---\n  duration_ms: 0.669659\n  type: 'test'\n  ...\n# Subtest: 14 day PTO notice and sick exemption\nok 4 - 14 day PTO notice and sick exemption\n  ---\n  duration_ms: 0.263175\n  type: 'test'\n  ...\n# Subtest: quarter blackout boundaries and spanning ranges\nok 5 - quarter blackout boundaries and spanning ranges\n  ---\n  duration_ms: 0.299455\n  type: 'test'\n  ...\n# Subtest: weekends and explicit holidays\nok 6 - weekends and explicit holidays\n  ---\n  duration_ms: 0.143055\n  type: 'test'\n  ...\n# Subtest: reject invalid and reversed ranges\nok 7 - reject invalid and reversed ranges\n  ---\n  duration_ms: 0.142071\n  type: 'test'\n  ...\n# Subtest: carryover and accrual caps\nok 8 - carryover and accrual caps\n  ---\n  duration_ms: 0.106112\n  type: 'test'\n  ...\n# Subtest: 14 day PTO notice and sick exemption\nok 9 - 14 day PTO notice and sick exemption\n  ---\n  duration_ms: 0.290452\n  type: 'test'\n  ...\n# Subtest: quarter blackout boundaries and spanning ranges\nok 10 - quarter blackout boundaries and spanning ranges\n  ---\n  duration_ms: 0.358383\n  type: 'test'\n  ...\n1..10\n# tests 10\n# suites 0\n# pass 10\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 16.045638\n\n",
-      "attempt": 1
-    }
-  ],
-  "outcome": {
-    "outcome": "dry_run",
-    "message": "Generated source only. No Git or workspace files written; run history and artifacts saved in Delta.",
-    "learned": [
-      {
-        "requirement": "Managers approve up to 5 consecutive days; Anything over 10 consecutive days needs the CEO. No more than 2 people out on the same team at once.",
-        "source_person_email": "amara.okonkwo@fernwoodlabs.io"
-      },
-      {
-        "requirement": "PTO accrues at about 1.67 days per month; Balances currently live in a Google Sheet called PTO Balances; Unused days above the carryover cap are forfeited on Dec 31.",
-        "source_person_email": "sophie.lindgren@fernwoodlabs.io"
-      },
-      {
-        "requirement": "Payroll runs on the 1st and 15th and needs a CSV export of approved days.",
-        "source_person_email": "sophie.lindgren@fernwoodlabs.io"
-      },
-      {
-        "requirement": "Internal tools should be a single-page web app in TypeScript with Google Workspace login; No new paid vendors; Employee data must not be exposed publicly; Keep the codebase small and tested.",
-        "source_person_email": "hannah.cho@fernwoodlabs.io"
-      },
-      {
-        "requirement": "Suggested data model: requests(id, employee_email, start_date, end_date, type, status, approver_email, created_at); Status values: pending, approved, denied, cancelled.",
-        "source_person_email": "marcus.webb@fernwoodlabs.io"
-      },
-      {
-        "requirement": "Brand: teal accent (#0F766E), Inter font, lots of white space; Status colors: pending amber, approved green, denied red; One primary action per screen.",
-        "source_person_email": "tom.aldrich@fernwoodlabs.io"
-      },
-      {
-        "requirement": "At least one Customer Success person must be working at all times; She needs to see overlaps on a team calendar before approving.",
-        "source_person_email": "nina.alvarez@fernwoodlabs.io"
-      },
-      {
-        "requirement": "Sales cannot take PTO during the last two weeks of each quarter without his approval.",
-        "source_person_email": "raj.patel@fernwoodlabs.io"
-      }
-    ]
-  }
+  "setup": "git folder path\n/Workspace/Users/kaashish.v@gmail.com/.bundle/Test-Repo\nrepo url\nhttps://github.com/Kman771/Test-Repo\ngit path\ngithub_api\nsearch provider\nTavily\nsearch configured\nfalse\ngit token configured\ntrue\ndwell seconds\n1\nbranch policy\nagent-run-<timestamp>; main is not enabled\nstorage\nUnity Catalog Delta\nschema\n`workspace`.`fernwood`"
 }

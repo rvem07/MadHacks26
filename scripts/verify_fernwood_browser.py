@@ -36,6 +36,7 @@ with sync_playwright() as pw:
   report['checks']['data_views_and_quarantine']='passed'
   page.click('#viewToggle');page.screenshot(path='data/fernwood-graph.png',full_page=True)
   page.click('#setup');expect(page.locator('#setupDialog')).to_be_visible()
+  expect(page.locator('#setupBody')).to_contain_text('git token configured')
   report['setup']=page.locator('#setupBody').inner_text();page.get_by_role('button',name='Done',exact=True).click()
   report['checks']['private_browser_live_app']='passed'
   if a.run or a.run_id:
