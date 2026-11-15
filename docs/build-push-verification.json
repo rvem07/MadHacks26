@@ -1,10 +1,42 @@
 {
-  "run_id": "9dd7bd3dfb194e3795dfc801b1192a65",
+  "run_id": "4980e4d05a154e9ba5db10a823a5aaed",
+  "branch_url": "https://github.com/Kman771/Test-Repo/tree/agent-run-20261115171411-4980e4",
+  "commits": [
+    {
+      "sha": "ade906b93afb55a3f37564467b0c105c48cf7a23",
+      "commit_url": "https://github.com/Kman771/Test-Repo/commit/ade906b93afb55a3f37564467b0c105c48cf7a23",
+      "message": "Scaffold and attributed requirements [Fernwood 4980e4d0 step 1]"
+    },
+    {
+      "sha": "d5d17a830d4cb5c5eecbe0c91e6808b87be2dc0b",
+      "commit_url": "https://github.com/Kman771/Test-Repo/commit/d5d17a830d4cb5c5eecbe0c91e6808b87be2dc0b",
+      "message": "Define request data model [Fernwood 4980e4d0 step 2]"
+    },
+    {
+      "sha": "983353da7b09ede0f5d5fa7598abf48bf35413b1",
+      "commit_url": "https://github.com/Kman771/Test-Repo/commit/983353da7b09ede0f5d5fa7598abf48bf35413b1",
+      "message": "Implement time-off rules [Fernwood 4980e4d0 step 3]"
+    },
+    {
+      "sha": "c15cc52ba53b81cfe764f057a5f5faab4604277a",
+      "commit_url": "https://github.com/Kman771/Test-Repo/commit/c15cc52ba53b81cfe764f057a5f5faab4604277a",
+      "message": "Build request and calendar UI [Fernwood 4980e4d0 step 4]"
+    },
+    {
+      "sha": "7a86c9d4ce1c03a1df71117940b4a1d3f2e8803a",
+      "commit_url": "https://github.com/Kman771/Test-Repo/commit/7a86c9d4ce1c03a1df71117940b4a1d3f2e8803a",
+      "message": "Test time-off calculations [Fernwood 4980e4d0 step 5]"
+    },
+    {
+      "sha": "0dca0f2fd08220a5bec8260e20b4ce61583e22b1",
+      "commit_url": "https://github.com/Kman771/Test-Repo/commit/0dca0f2fd08220a5bec8260e20b4ce61583e22b1",
+      "message": "Fix UI day constant and verify production build"
+    }
+  ],
   "checks": {
     "generated_logic_tests": "passed",
+    "github_remote_files": "matched",
     "npm_test": "passed",
-    "production_build": "passed",
-    "github_push": "blocked: GitHub HTTP 403, Resource not accessible by personal access token; Contents write permission required",
-    "generated_app_browser": "passed: request creation, manager approval, employee cancellation, localStorage persistence"
+    "production_build": "passed"
   }
 }
