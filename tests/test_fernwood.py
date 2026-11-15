@@ -323,3 +323,38 @@ def test_delta_sql_does_not_retry_other_failures(monkeypatch):
     db.client=NS(statement_execution=NS(execute_statement=execute))
     with pytest.raises(RuntimeError,match='permission denied'):db.sql('MERGE INTO test')
     assert len(calls)==1
+
+
+def test_app_serves_page_while_history_is_restoring(monkeypatch):
+    import threading
+    from fastapi.testclient import TestClient
+    import afd.watcher as watcher_module
+    from afd.main import app
+    entered=threading.Event();release=threading.Event()
+    class SlowWatcher:
+        def recover(self):
+            entered.set();release.wait(10)
+    monkeypatch.setattr(watcher_module,'get_watcher',lambda:SlowWatcher())
+    try:
+        with TestClient(app) as client:
+            assert entered.wait(1)
+            assert client.get('/').status_code==200
+            response=client.get('/health')
+            assert response.status_code==200 and response.json()['recovery']['status']=='restoring'
+    finally:release.set()
+
+
+def test_failed_recovery_does_not_take_down_app(monkeypatch):
+    import threading
+    from fastapi.testclient import TestClient
+    import afd.watcher as watcher_module
+    from afd.main import app
+    failed=threading.Event()
+    class FailedWatcher:
+        def recover(self):
+            failed.set();raise ConnectionError('temporary connection failure')
+    monkeypatch.setattr(watcher_module,'get_watcher',lambda:FailedWatcher())
+    with TestClient(app) as client:
+        assert failed.wait(1)
+        assert client.get('/health').status_code==200
+        assert client.get('/').status_code==200

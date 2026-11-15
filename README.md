@@ -92,7 +92,7 @@ The bundle must declare the matching secret resources, or add them through the A
 
 ## Demo
 
-Hover cards leave node colors unchanged. The green pulse indicates the agent’s current location, including time spent waiting for the next step. Direct travel trails connect visited nodes regardless of team relationships. Web search (purple), Coding (blue), and GitHub (amber) are separate workflow nodes; unavailable search is labeled and does not block building. Temporary transport failures retry up to twice from saved checkpoints.
+The web server starts before saved-run recovery; history restoration runs in the background with bounded retries and reports its status through `/health`. Hover cards leave node colors unchanged. The green pulse indicates the agent’s current location, including time spent waiting for the next step. Direct travel trails connect visited nodes regardless of team relationships. Web search (purple), Coding (blue), and GitHub (amber) are separate workflow nodes; unavailable search is labeled and does not block building. Temporary transport failures retry up to twice from saved checkpoints.
 
 1. Open the deployed App with an authorized Databricks identity. A fresh incognito window still requires authentication; Apps are not anonymous websites.
 2. Click **Data**, inspect Raw CSV → Bronze → Silver → Gold, including quarantine, then click **Graph**.
