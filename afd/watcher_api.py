@@ -91,3 +91,32 @@ def sample_csv():
     from pathlib import Path
     from fastapi.responses import FileResponse
     return FileResponse(Path(__file__).resolve().parent.parent/'samples'/'team.csv',media_type='text/csv',filename='team.csv')
+
+
+@router.get('/runs/{rid}/output')
+def run_output(rid:str):
+    from .git_output import GitHubRepo,GitHubError
+    from urllib.parse import quote
+    try:doc=get_watcher().get(rid)
+    except KeyError:raise HTTPException(404,'Run not found')
+    if not doc.get('branch'):
+        return {'status':'unpublished','message':'This run has no published branch.'}
+    repo=None
+    try:
+        repo=GitHubRepo()
+        # Historical outputs must never be silently redirected to another repository.
+        stored=next((e['payload'].get('branch_url') for e in reversed(doc['events']) if e['type']=='done' and e['payload'].get('branch_url')),None)
+        expected=repo.url+'/tree/'+doc['branch']
+        if stored and stored!=expected:
+            return {'status':'unverified','message':'This historical run used a different repository. Its output cannot be verified with the current configuration.'}
+        head=repo.head(doc['branch'])
+        if doc.get('commits') and head!=doc['commits'][-1]['sha']:
+            return {'status':'changed','message':'The remote branch changed after this run. The saved output is no longer verified.'}
+        return {'status':'available','branch_url':repo.url+'/tree/'+quote(doc['branch'],safe='/'),'branch':doc['branch'],'run_id':rid}
+    except GitHubError as e:
+        if e.status==404:return {'status':'missing','message':'This historical branch is missing or no longer accessible on GitHub. The generated files remain saved in this run.'}
+        return {'status':'unverified','message':'GitHub output could not be verified. Check Setup and try again.'}
+    except Exception:
+        return {'status':'unverified','message':'GitHub output could not be verified right now. Try again shortly.'}
+    finally:
+        if repo:repo.client.close()

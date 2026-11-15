@@ -406,3 +406,25 @@ def test_implementation_explanation_requires_source_evidence():
     result=implementation_summary(doc,{'src/logic.ts':'export function noticeValid() { return true; }'})
     assert result['decisions'][0]['source_person_email']=='hr@example.test'
     assert result['decisions'][0]['path']=='src/logic.ts'
+
+
+@pytest.mark.parametrize('remote,status',[('expected','available'),('changed','changed'),('missing','missing'),('offline','unverified')])
+def test_output_link_is_verified_before_display(db,monkeypatch,remote,status):
+    import afd.watcher_api as api
+    import afd.git_output as git
+    w=Watcher(db,background=False);rid=w.start()['run_id'];doc=w.get(rid)
+    doc.update(branch='agent-run-test',commits=[{'sha':'expected'}]);w.commit(doc)
+    monkeypatch.setattr(api,'get_watcher',lambda:w)
+    closed=[]
+    class Repo:
+        url='https://github.com/Kman771/Test-Repo'
+        client=type('Client',(),{'close':lambda self:closed.append(True)})()
+        def head(self,branch):
+            if remote=='missing':raise git.GitHubError(404)
+            if remote=='offline':raise ConnectionError()
+            return remote
+    monkeypatch.setattr(git,'GitHubRepo',Repo)
+    result=api.run_output(rid)
+    assert result['status']==status
+    assert ('branch_url' in result)==(status=='available')
+    assert closed
