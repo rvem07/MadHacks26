@@ -148,3 +148,51 @@ tr.stale td { background: color-mix(in srgb, var(--warn) 9%, transparent); }
 td.ok { color: var(--good); font-weight: 600; } td.no { color: var(--bad); font-weight: 600; }
 select { max-width: 100%; text-overflow: ellipsis; }
 a { color: var(--accent); }
+
+/* Employee Watcher additions; existing layout and typography are shared. */
+.watch-step { cursor: pointer; padding: 10px; border-bottom: 1px solid var(--line); }
+.watch-step p { margin: 5px 0; white-space: pre-wrap; }
+.watch-waiting { color: #f4ba55; font-weight: 600; }
+#watchControls { margin-top: 10px; flex-wrap: wrap; }
+#pipelinePanel table { width: 100%; text-align: left; }
+#pipelinePanel td, #pipelinePanel th { padding: 6px; }
+#answer { white-space: pre-wrap; }
+#detail pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+[hidden] { display: none !important; }
+.log li.watch-step { display: block; }
+.log li.watch-step strong { display: block; overflow-wrap: anywhere; }
+
+/* Focused wildlife demo: prompt, existing employee graph, summarized workflow. */
+.wildlife-demo { background: #f5f8f6; color: #23372f; }
+.demo-shell { max-width: 1580px; margin: 0 auto; padding: 28px; display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(340px, 1fr); gap: 20px; align-items: start; }
+.demo-shell > section { min-width: 0; }
+.demo-prompt { grid-column: 1 / -1; }
+.demo-heading { display: flex; align-items: baseline; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+.demo-heading h1 { margin: 0; font-size: 23px; letter-spacing: -.6px; }
+.demo-caption { font-size: 13px; color: var(--muted); }
+.demo-prompt label { display: block; font-weight: 600; margin-bottom: 8px; }
+.demo-compose { display: flex; gap: 12px; align-items: stretch; }
+.demo-compose textarea { flex: 1; min-height: 76px; }
+.demo-compose button { min-width: 130px; }
+.wildlife-demo button.primary { background: #326b54; border-color: #326b54; color: white; }
+.wildlife-demo h2 { font-size: 16px; margin: 0 0 16px; }
+.demo-graph { position: sticky; top: 20px; }
+.demo-graph #cy { position: relative; width: 100%; overflow: hidden; height: 58vh; min-height: 380px; }
+.demo-legend { font-size: 11px; color: var(--muted); margin: 12px 0 0; }
+.demo-summary { padding-left: 22px; margin: 0; font-size: 13px; line-height: 1.65; }
+.demo-summary li { padding: 0 0 12px 5px; overflow-wrap: anywhere; }
+.summary-resolved::marker { color: #43816b; }
+.summary-followup { color: #87691e; }
+.summary-current { font-weight: 600; }
+.demo-question { margin-top: 12px; padding-top: 18px; border-top: 1px solid var(--line); }
+.question-person { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+.demo-question fieldset { padding: 0; border: 0; margin: 0 0 12px; min-width: 0; }
+.demo-question legend { font-size: 15px; font-weight: 600; margin-bottom: 12px; line-height: 1.5; }
+.demo-choice { display: flex; align-items: center; gap: 9px; padding: 12px; margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 13px; }
+.demo-choice:has(input:checked) { border-color: #43816b; background: #eaf3ed; }
+.demo-choice input { accent-color: #326b54; }
+.answer-error { color: #b73535; font-size: 12px; }
+#demoAnswer { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+#demoAnswer p { white-space: pre-wrap; line-height: 1.7; font-size: 13px; }
+@media (max-width: 900px) { .demo-shell { grid-template-columns: minmax(0, 1fr); padding: 16px; } .demo-graph { position: relative; top: 0; } .demo-graph #cy { height: 370px; min-height: 0; } .demo-compose { flex-direction: column; } }
+@media (prefers-color-scheme: dark) { .wildlife-demo { background: #101a15; color: #e6e9ee; } .demo-choice:has(input:checked) { background: #20392c; } }

@@ -1,0 +1,2 @@
+# Optional acceptance testing only; not installed by Databricks Apps.
+playwright>=1.50

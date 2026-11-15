@@ -1,3 +1,138 @@
+# Agent Watcher
+
+The default screen is a **guided wildlife-protection demo** with just a prompt, the existing employee graph, and a summarized workflow. Plan a secure application for an endangered-animal startup without exposing precise animal locations to hunters. The demo reuses FastAPI, Cytoscape, SSE, and the durable human-question workflow. The generic Watcher backend remains available through its APIs; the original Agent Flow Debugger is opt-in with `AFD_WORKFLOW=legacy`.
+
+## Run locally
+
+Python 3.11+:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python scripts/run_pipeline.py
+.venv/bin/python -m afd
+```
+
+Open **http://localhost:8765**. Local mode needs no Databricks credentials. It stores authoritative documents under `data/watcher/`; initial startup publishes the sample if no batch exists. Explicit pipeline runs always append a new immutable batch. Files in `samples/badgernet/` are checked in; `data/` is ignored.
+
+The screen is labeled **guided demo**. Its employee sequence and questions are deterministic and need no model credentials, including on Databricks. Questions, human selections, follow-ups, and the final specification are real persisted workflow records. Generic runs without a scenario identifier can still use the local or Databricks model adapter described below.
+
+## Manual demo
+
+1. Use the prefilled wildlife-protection prompt, or enter **Build an application for our startup**. Click **Start demo**.
+2. The scenario explicitly starts with **Maria Alvarez** for primary users, then **Priya Sharma** for sighting collection, **Rachel Kim** for location access, **Lena Ortiz** for field alerts, and **Tom Becker** for the pilot. It never falls back to Aisha because of dropdown ordering.
+3. Answer each employee's short question inside the workflow panel. Each question has three choices plus **Other** with an explanation field.
+4. To demonstrate a follow-up, choose Other and type **Not sure, whatever works**. The agent stays with the same employee and asks for a concrete decision. Choose a specific option, or explain **Field rangers and local veterinarians**, to continue.
+5. Refresh while waiting: the same saved question and prior answers return in that browser. No answer or advance is driven by a timer.
+6. After all five decisions, read the application specification in the workflow panel. It summarizes the supplied answers and a security foundation; it does not claim to have deployed an application. Click **Run again** to repeat.
+
+All 14 existing employee nodes and 9 reporting edges are retained. Consulted employees turn green; the employee awaiting an answer turns gold. Only actual reporting edges pulse when traversed; no scenario-only reporting relationships are fabricated.
+
+The screen has no Act-as switcher, separate inbox, run history, pipeline panel, replay, raw-event viewer, Nudge, Reroute, Cancel, or administration controls. Answers are explicitly attributed to the employee named in the question. This is a demo interaction, not employee authentication.
+
+Scenario definition: `afd/wildlife.py`, version `wildlife_protection_v1`. Choice answers resolve the current decision. Other explanations use conservative stage-specific rules to recognize concrete answers; vague or unrecognized explanations prompt a narrower follow-up. The demonstrator can always use a structured choice to clarify the decision. These rules are not general-purpose semantic understanding.
+
+## Pipeline and data-quality rules
+
+The same Python transformations run here and as a Databricks Job. No Spark installation or extra runtime dependency is required.
+
+| Layer | Behavior |
+|---|---|
+| Bronze | Preserve original CSV values, source file/line, ingestion time and batch; insert-only projection. |
+| Silver | Trim/lowercase emails; merge repeated canonical emails; apply explicit aliases; preserve provenance. |
+| Quarantine | Retain raw records and reasons for missing managers, multiple managers, reporting cycles, and unowned topics. |
+| Gold | Employee nodes with email IDs; validated `reports_to` edges; topic ownership and materialized owner-to-manager chains. |
+
+`aliases.json` explicitly merges `psharma@badgernet.com` into `priya.sharma@badgernet.com`. It is an auditable input decision, not an inferred identity claim. Canonical-email rows take precedence, then the most complete name, then source-row order. Conflicting manager edges are all quarantined instead of selecting a winner. Cycle participants keep their employee nodes but lose invalid reporting edges. A blank manager is allowed for a root employee.
+
+Expected sample output: **24 raw records, 2 duplicates merged, 14 employees, 9 reporting edges, 7 owned topics, 6 quarantined records in 4 violation groups**. Quarantine: 1 missing manager, 2 multiple-manager records, 2 cycle records, and 1 unowned topic. Teams are employee attributes; topics live in routing data, not graph nodes. The default wildlife demo supplies explicit scenario responsibility mappings without changing these employee nodes or reporting edges. Generic routing still uses the CSV topics.
+
+Each pipeline publication creates a batch and updates the active pointer only after gold projections succeed. Runs pin their batch. Query gold routing on Databricks with:
+
+```sql
+SELECT topic, owner_email, person_email, depth
+FROM workspace.agent_watcher.topic_routing
+WHERE topic = 'network outage'
+ORDER BY depth;
+```
+
+The result is Priya → Tom → Maria. Invalid reporting relationships never enter that chain. Nodes and edges carry source, confidence, and UTC update time. Unity Catalog primary/foreign keys document relationships; code performs integrity validation because [Databricks key constraints are informational](https://docs.databricks.com/aws/en/tables/constraints).
+
+## Checkpoints, requests, and events
+
+`afd/watcher.py` is the active workflow policy and `afd/watchstore.py` implements persistence. The existing coding/Agent Bricks host is retained for the legacy workflow; Watcher reuses the existing Databricks model client directly for bounded JSON decisions.
+
+Each run document atomically stores its checkpoint, full conversation, selected next action, pending-request history, and event outbox. Human waiting returns immediately after saving; it retains no agent thread, HTTP callback, or model invocation. Answer submission launches a fresh execution segment. The only automatic read loops are UI observation and SQL transport completion checks, neither of which escalates or resumes human waiting.
+
+States: `running`, `waiting_on_human`, `resumed`, `done`, `cancelled`. Generic model errors retain the checkpoint with an explicit diagnostic and a backend retry endpoint; they do not invent an answer. A saved next action is replayed after restart rather than asking the model to choose again. Waiting runs remain waiting after restart.
+
+Databricks mode synchronously writes authoritative `workflow_documents` using revision checks. Physical `runs`, `pending_requests`, and `events` Delta tables are idempotent projections from those documents; projection failures are surfaced and repaired on startup. Run **one app process/replica**: initial-key uniqueness and continuation dispatch depend on this single-writer deployment. This is not a distributed task queue. Local JSON persistence uses atomic replacement and file locking.
+
+If a projection fails after an authoritative transition committed, the API can report an error even though the answer is saved. Use the backend repair endpoint or repair projections and restart the app to recover ready continuations; administration controls are intentionally absent from the simplified demo. Cancelled and superseded requests reject later answers. For manual projection repair without ingesting a new batch:
+
+```bash
+.venv/bin/python scripts/run_pipeline.py --repair
+```
+
+Watcher API: `/api/watcher/meta`, `/pipeline?batch=...`, `/runs`, `/runs/{id}`, `/runs/{id}/stream`, `/pending_requests?person=...`, `/pending_requests/{id}/answer`, and `/runs/{id}/{nudge|reroute|cancel|retry|repair}`. Start payload: `{task, requester, scenario?}`; text answer: `{answer, person}`; demo answer: `{option_id, explanation?, person}`; controls: `{actor}`. Use `scenario: "wildlife_protection_v1"` for the guided workflow; omit it for generic routing. Existing `/api/runs`, `/api/ontology`, `/api/questions` and reply routes dispatch to Watcher by default. Legacy-only editors, review, and benchmarks are hidden in the Watcher UI.
+
+## Deploy later to Databricks
+
+No workspace access is needed to code or test locally. `databricks.yml` defines a serverless pipeline Job and a Databricks App; `app.yaml` binds an existing SQL warehouse and model endpoint. The app installs the existing `requirements.txt`. The Job needs only the Databricks SDK and imports the shared pipeline, not the web app.
+
+When workspace access is available:
+
+1. Authenticate the Databricks CLI using your workspace's approved OAuth/profile flow. No credentials belong in this repo.
+2. Choose a SQL warehouse, Unity Catalog catalog/schema, and a chat model endpoint that accepts the existing OpenAI-compatible serving payload. Update `app.yaml` catalog/schema if changing the bundle defaults; the app and Job must use the same schema. `model_endpoint` is passed to the app through its resource binding.
+3. Grant the pipeline identity warehouse access and catalog/schema creation or ownership permissions needed for bootstrap. Grant the app service principal `USE CATALOG`, `USE SCHEMA`, and `SELECT`/`MODIFY` on the created tables. Warehouse `CAN_USE` and model `CAN_QUERY` bindings are included in the bundle. Schema/view creation remains a pipeline responsibility.
+4. Validate, deploy resource definitions, publish the pipeline, grant the app table access, then start the App:
+
+```bash
+databricks bundle validate --var warehouse_id=YOUR_WAREHOUSE_ID
+databricks bundle deploy --var warehouse_id=YOUR_WAREHOUSE_ID
+databricks bundle run watcher_pipeline --var warehouse_id=YOUR_WAREHOUSE_ID
+# Grant the App service principal access to the created schema/tables before starting it.
+databricks bundle run watcher --var warehouse_id=YOUR_WAREHOUSE_ID
+```
+
+[Bundle deployment uploads the source; running the app starts/restarts it](https://docs.databricks.com/aws/en/dev-tools/cli/bundle-commands). Check the app's actual health/logs after starting it. [Resource-backed environment variables](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/environment-variables) resolve warehouse IDs and model endpoint names without hardcoding them in application code.
+
+Alternatively, bootstrap from this checkout after authenticating:
+
+```bash
+.venv/bin/python scripts/run_pipeline.py --delta --bootstrap \
+  --warehouse-id YOUR_WAREHOUSE_ID --catalog workspace --schema agent_watcher
+```
+
+Bootstrap is idempotent and uses a **separate `agent_watcher` schema**, leaving original `agent_flow` tables intact. It creates physical bronze, silver, gold, quarantine, routing, stats, request, event, run, and checkpoint tables, plus current-batch views. There is no destructive migration or conversion of old demo runs. For future incompatible Watcher schema changes, publish to a new schema and update both app and Job configuration; bootstrap does not silently rewrite existing columns.
+
+For hosted-model testing from local code, set `AFD_WATCHER_AGENT=databricks` and `AFD_WATCHER_MODEL=<endpoint>` with SDK authentication available. Set `AFD_DELTA=1`, `AFD_WAREHOUSE_ID`, `AFD_CATALOG`, and `AFD_WATCHER_SCHEMA` to use Delta persistence. Databricks mode refuses local-only fallback and requires a published pipeline before app startup. App-local files are temporary and are not used as the workflow authority.
+
+Optional tracing: configure a writable MLflow experiment, `MLFLOW_TRACKING_URI=databricks`, `MLFLOW_EXPERIMENT_ID`, and `AFD_MLFLOW=1`. Spans cover actual routing calls and execution segments. The semantic event log remains available without MLflow.
+
+## Verification
+
+```bash
+.venv/bin/python -m pytest -q
+.venv/bin/python scripts/validate_bundle.py  # installed Databricks CLI schema; offline
+node --check static/app.js
+node --check static/watcher.js
+
+# Optional browser acceptance test against the running LOCAL app:
+.venv/bin/pip install -r requirements-browser.txt
+# If system Chrome is unavailable: .venv/bin/python -m playwright install chromium
+.venv/bin/python scripts/verify_watcher_browser.py
+```
+
+The browser check verifies the three-panel screen, unchanged graph, explicit Maria routing, multiple-choice answers, Other follow-ups, refresh recovery, all five employee decisions, final specification, mobile layout, and Run again. It writes a screenshot under ignored `data/`. Backend tests cover restart recovery, pinned batches, stale answers, concurrent controls, model decisions through an injected adapter, and projection-failure recovery. See `docs/watcher-verification.md` for executed results and remaining workspace checks.
+
+---
+
+# Original Agent Flow Debugger (legacy workflow)
+
+The following documentation describes `AFD_WORKFLOW=legacy`, including its historical simulated replies and timeout behavior. Those mechanisms are not used by Agent Watcher.
+
+
 # Agent Flow Debugger
 
 **A glass-box control room for AI agents at small startups.** Teammates watch an agent move through the
@@ -579,7 +714,7 @@ Then, in the app's settings, add the SQL warehouse resource named `sql-warehouse
 service principal `USE SCHEMA` and `SELECT`/`MODIFY` on `workspace.agent_flow`, `CAN QUERY` on the narrator
 and reviewer serving endpoints, and access to the Genie space if you set `AFD_GENIE_SPACE_ID`.
 
-### 12.4 Deploy the Agent Bricks agent (not done; run when you're ready)
+### 12.4 Deploy the Agent Bricks agent (not done; run when you're ready)1
 
 ```bash
 cd agent_bricks

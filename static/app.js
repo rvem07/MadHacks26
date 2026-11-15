@@ -76,6 +76,8 @@ const S = {
 };
 
 async function boot() {
+  const mode = await api("/api/mode");
+  if (mode.workflow === "watcher") return watcherBoot();
   S.meta = await api("/api/meta");
   // "You are": flat access, used for attribution only.
   const me = $("me");
