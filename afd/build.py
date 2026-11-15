@@ -45,6 +45,10 @@ def validate_files(files):
     # Test only the pure logic module in a process with no environment secrets and restricted filesystem.
     if re.search(r'\b(import|require|eval|Function|process|fetch|globalThis)\b',files['src/logic.ts']): raise ValueError('Logic must be pure standalone functions')
     for path,content in files.items():
+        if path.endswith('.ts'):
+            imports=re.findall(r'(?:from\s*|import\s*|import\s*\()([\"\'])(.*?)\1',content)
+            allowed={'./style.css','./logic.ts','./types.ts','../src/logic.ts','node:test','node:assert/strict'}
+            if any(spec not in allowed for _,spec in imports):raise ValueError('Unexpected source import: '+path)
         if re.search(r'<script[^>]+src=[\"\']https?://|\b(fetch|XMLHttpRequest|WebSocket)\s*\(',content):
             raise ValueError('External code/network calls are not part of the mock app: '+path)
     return files
@@ -72,6 +76,31 @@ def test_files(files):
             return {'status':'failed','output':'Real test execution exceeded the 20-second limit.'}
 
 
+def verify_app(files):
+    from .buildcheck import production_check
+    logic=test_files(files)
+    if logic['status']!='passed':return dict(logic,status='failed')
+    production=production_check(files)
+    return {'status':production['status'],'logic_tests':logic['status'],'production_build':production['status'],
+            'output':logic['output']+'\n'+production['output']}
+
+
+def implementation_summary(doc,files):
+    rules=[('notice','noticeValid','src/logic.ts','Check notice periods before accepting PTO requests.'),
+           ('carry','carryover','src/logic.ts','Cap the unused PTO carried into the next year.'),
+           ('accru','accruedPto','src/logic.ts','Calculate accrued PTO with the annual cap.'),
+           ('blackout','salesBlackout','src/logic.ts','Check date ranges against sales blackout periods.'),
+           ('approv','approver-view','src/main.ts','Provide a separate approval view for managers.'),
+           ('calendar','team-calendar','src/main.ts','Show requests together on a team calendar.')]
+    decisions=[]
+    for word,marker,path,explanation in rules:
+        requirement=next((r for r in doc['spec']['requirements'] if word in r['requirement'].lower()),None)
+        if requirement and marker in files[path]:
+            excerpt=next((line.strip() for line in files[path].splitlines() if marker in line and not line.startswith('import')), '')[:500]
+            decisions.append(dict(requirement,explanation=explanation,path=path,excerpt=excerpt))
+    return {'decisions':decisions,'files':sorted(files),'message':'Implementation choices linked to collected requirements and generated source.'}
+
+
 def readme(doc):
     lines=['# Fernwood time-off tracker','',doc['task'],'','Small fictional demo: mock login, localStorage only. No live Slack, Google Workspace or Calendar integration. Do not use with real employee data.','',
            '## Requirements and sources','']
@@ -96,15 +125,16 @@ def build(watcher,doc):
                 files=validate_files(watcher.model('build',{'task':doc['task'],'spec':doc['spec'],
                     'research':doc['research'],'previous_failure':failure,'previous_files':previous_files,'required_contract_tests':CONTRACT,'reference_files':{p:(REFERENCE/p).read_text() for p in FILES}},max_tokens=9500).get('files'))
                 previous_files=files
-                result=test_files(files)
+                result=verify_app(files)
             except (ValueError,KeyError,TypeError) as e:
                 result={'status':'failed','output':'Generated source validation failed: '+str(e)}
             doc['generation_failure']=result.get('output') if result['status']=='failed' else None
             doc['generation_candidate']=previous_files
             watcher.event(doc,'test_result',dict(result,attempt=attempt+1))
-            if result['status'] in ['passed','not run']: break
+            if result['status']=='passed': break
             failure=result['output']
         else: raise ValueError('Generation failed after two retries')
+        watcher.event(doc,'implementation',implementation_summary(doc,files))
         files['README.md']=readme(doc)
         doc.pop('generation_candidate',None)
         doc.pop('generation_failure',None)
@@ -116,5 +146,9 @@ def build(watcher,doc):
         watcher.event(doc,'done',{'outcome':'dry_run','message':'Generated source only. No Git or workspace files written; run history and artifacts saved in Delta.',
                       'files':doc['artifacts'],'learned':doc['spec']['requirements'],'tests':doc['test_result']})
         return
+    if doc.get('test_result',{}).get('production_build')!='passed':
+        result=verify_app({r['path']:r['content'] for r in doc['artifacts']})
+        doc['test_result']=result;watcher.event(doc,'test_result',result)
+        if result['status']!='passed':raise ValueError('Saved source failed production verification')
     from .git_output import publish
     publish(watcher,doc)

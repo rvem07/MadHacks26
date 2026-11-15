@@ -14,3 +14,7 @@
 .travel-head{fill:#22c55e;filter:drop-shadow(0 0 5px #22c55e)}
 .travel-flight{opacity:1}.travel-flight.fading{opacity:0;transition:opacity .5s ease-out}
 #token.stage-pulse{border-radius:14px;background:transparent}
+
+.upload-help{font-size:13px;line-height:1.6;margin:14px 0;color:var(--muted)}#csvFile{display:block;width:100%;margin:12px 0;padding:10px;border:1px solid var(--line);border-radius:10px}#uploadStatus{font-size:13px;line-height:1.6;margin-top:14px;white-space:pre-wrap}
+
+.decision{border-left:3px solid #3b82f6;padding:10px 12px;margin:12px 0;background:#3b82f608;border-radius:0 10px 10px 0;font-size:13px;line-height:1.5}.decision .muted{font-size:11px;margin-top:5px}.result-card{padding:18px 14px;border:1px solid #22c55e60;border-radius:14px;background:#22c55e08;margin-top:12px}.verified{color:var(--accent);font-weight:600}.event.resolved{opacity:.55}.event.resolved:before{content:'Earlier attempt · resolved';font-size:10px;color:var(--muted)}

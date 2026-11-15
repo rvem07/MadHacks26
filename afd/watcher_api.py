@@ -11,7 +11,7 @@ class StartRequest(BaseModel):
     fresh:bool=False
 
 @router.get('/graph')
-def graph(): return get_watcher().db.graph()
+def graph(batch_id:str|None=None): return get_watcher().db.graph(batch_id)
 
 @router.get('/data/{table}')
 def data(table:str):
@@ -24,7 +24,7 @@ def start(body:StartRequest): return get_watcher().start(body.task,body.dry_run,
 
 @router.get('/runs')
 def runs():
-    return [{'run_id':r['run_id'],'status':r['status'],'created_at':r['created_at'],'task':r['task']}
+    return [{'run_id':r['run_id'],'status':r['status'],'created_at':r['created_at'],'task':r['task'],'batch_id':r['batch_id']}
             for r in sorted(get_watcher().db.list('run:'),key=lambda r:r['created_at'],reverse=True)]
 
 @router.get('/runs/{rid}/events')
@@ -66,3 +66,28 @@ def publish_saved(rid:str):
         w.commit(doc)
         w.schedule(rid)
     return {'run_id':rid}
+
+
+class CsvRequest(BaseModel):
+    filename:str=Field(min_length=1,max_length=120)
+    csv_text:str=Field(min_length=1,max_length=1048576)
+
+
+@router.post('/ingestions')
+def ingest_csv(body:CsvRequest):
+    try:return get_watcher().ingestor.start(body.csv_text,body.filename)
+    except ValueError as e:raise HTTPException(400,str(e))
+
+
+@router.get('/ingestions/{job_id}')
+def ingestion_status(job_id:str):
+    ingestor=get_watcher().ingestor
+    try:return ingestor.summary(ingestor.get(job_id))
+    except KeyError:raise HTTPException(404,'Ingestion not found')
+
+
+@router.get('/samples/team.csv')
+def sample_csv():
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+    return FileResponse(Path(__file__).resolve().parent.parent/'samples'/'team.csv',media_type='text/csv',filename='team.csv')

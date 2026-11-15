@@ -90,6 +90,14 @@ After the keys exist, add these entries to `resources.apps.watcher.resources` in
 
 The bundle must declare the matching secret resources, or add them through the App resource UI. Do not put the value in YAML. No search key is configured in this deployment yet. Search emits visible `search_unavailable` events until configured; no URLs or search results are fabricated. Queries exclude employee names, emails, and company name. Only URLs returned with retrieved source text can be cited; a temperature-zero model paraphrases short key points.
 
+## CSV ingestion
+
+Use **Upload CSV → Build ontology** to provide one team CSV instead of the bundled inputs. Download the separate example from the upload dialog or use [`samples/team.csv`](samples/team.csv). The sample reproduces the ten-person demo with duplicate merging and two relationships needing review.
+
+Required columns: `name,email,title,team,manager_email,expertise,context_notes`. A top-level person can have a blank `manager_email`. Optional columns are `works_with` (semicolon-separated email addresses) and `collaboration_context`. Quote values containing commas using normal CSV quoting. Duplicate identities must have matching expertise and context notes. Limit: 1 MB and 200 person rows.
+
+Uploads preserve the original CSV and transform it into the existing Bronze → Silver → Gold pipeline. Unknown or conflicting relationships are flagged for review. A background job publishes a new active batch only after all projections succeed; invalid uploads leave the current ontology active. The interface refreshes the graph when ingestion finishes. Runs and replay use their original batch, while new runs use the latest uploaded ontology.
+
 ## Demo
 
 The web server starts before saved-run recovery; history restoration runs in the background with bounded retries and reports its status through `/health`. Hover cards leave node colors unchanged. The green pulse indicates the agent’s current location, including time spent waiting for the next step. Direct travel trails connect visited nodes regardless of team relationships. Web search (purple), Coding (blue), and GitHub (amber) are separate workflow nodes; unavailable search is labeled and does not block building. Temporary transport failures retry up to twice from saved checkpoints.
@@ -138,3 +146,7 @@ Development uses `.worktrees/fernwood-agent-watcher` and shares the existing Pyt
 - [Repos SDK API](https://databricks-sdk-py.readthedocs.io/en/stable/workspace/workspace/repos.html)
 - [GitHub commit API and Contents permission](https://docs.github.com/en/rest/git/commits)
 - [Tavily search and retrieved content](https://docs.tavily.com/documentation/api-reference/endpoint/search)
+
+## Presentation build (riskydemo)
+
+New publishing runs reset only `Kman771/Test-Repo`'s default branch to a README-only commit, preserve historical branches, and create their output branch from that exact commit. Preview runs never write GitHub. Retries reuse persisted cleanup and branch checkpoints. Production compilation and bundling must pass in addition to logic tests before publishing. Trusted pinned TypeScript/Vite tools are installed separately from generated packages, with lifecycle scripts disabled and no application credentials in compiler processes. The activity feed links implementation summaries to cited requirements and source excerpts.

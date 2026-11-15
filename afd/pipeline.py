@@ -2,6 +2,8 @@
 from __future__ import annotations
 import csv
 import hashlib
+import io
+import tempfile
 import json
 from collections import defaultdict
 from pathlib import Path
@@ -25,6 +27,17 @@ def identity_match(a, b):
             and normalize(a['manager_email']) == normalize(b['manager_email']))
 
 
+def people_aliases(raw):
+    if any(not r['name'].strip() or not r['email'].strip() for r in raw):
+        raise ValueError('Each person needs a name and email')
+    aliases = {normalize(r['email']):normalize(r['email']) for r in raw}
+    for row in sorted(raw,key=lambda r:(-len(r['name']),r.get('source_row',0))):
+        canonical = aliases[normalize(row['email'])]
+        for other in raw:
+            if identity_match(row,other): aliases[normalize(other['email'])] = canonical
+    return aliases
+
+
 def build_pipeline(directory, source_root=None):
     batch, now = uuid4().hex, now_iso()
     bronze, raw_files = {}, []
@@ -44,11 +57,7 @@ def build_pipeline(directory, source_root=None):
                     raise ValueError(f'{kind}:{i}: malformed CSV')
                 bronze[kind].append(dict(row,id=f'{kind}:{i}',batch_id=batch,source_file=source,source_row=i,ingested_at=now))
     raw = bronze['org_chart']
-    aliases = {normalize(r['email']):normalize(r['email']) for r in raw}
-    for row in sorted(raw,key=lambda r:(-len(r['name']),r['source_row'])):
-        canonical = aliases[normalize(row['email'])]
-        for other in raw:
-            if identity_match(row,other): aliases[normalize(other['email'])] = canonical
+    aliases = people_aliases(raw)
     groups = defaultdict(list)
     for row in raw: groups[aliases[normalize(row['email'])]].append(row)
     # Context emails are intentionally used as-is, as specified by the source contract.
@@ -59,7 +68,7 @@ def build_pipeline(directory, source_root=None):
         return dict(id=key,batch_id=batch,src=src,dst=dst,type=typ,context=ctx,status=status,
                     source=source,confidence=1.0 if status=='valid' else 0.0,updated_at=now)
     for pid, rows in sorted(groups.items()):
-        person = min(rows,key=lambda r:(normalize(r['email'])!=pid,-len(r['name']),r['source_row']))
+        person = min(rows,key=lambda r:(normalize(r['email'])!=pid,-len(r['name']),r.get('source_row',0)))
         managers = sorted({aliases.get(normalize(r['manager_email']),normalize(r['manager_email'])) for r in rows if r['manager_email'].strip()})
         reason = 'multiple_managers' if len(managers)>1 else 'manager_not_in_directory' if managers and managers[0] not in groups else ''
         source = [f"{r['source_file']}:{r['source_row']}" for r in rows]
@@ -90,9 +99,66 @@ def build_pipeline(directory, source_root=None):
                 aliases=aliases)
 
 
-def publish_pipeline(documents,directory,source_root=None):
-    pipeline=documents.put(build_pipeline(directory,source_root))
+def publish_prepared_pipeline(documents,pipeline):
+    pipeline=documents.get(pipeline['id']) or documents.put(pipeline)
     documents.project(pipeline)
     active=documents.get('active_pipeline')
     documents.put({'id':'active_pipeline','batch_id':pipeline['batch_id']},(active or {}).get('revision',0))
+    return pipeline
+
+
+def publish_pipeline(documents,directory,source_root=None):
+    return publish_prepared_pipeline(documents,build_pipeline(directory,source_root))
+
+
+UPLOAD_REQUIRED=['name','email','title','team','manager_email','expertise','context_notes']
+UPLOAD_OPTIONAL=['works_with','collaboration_context']
+
+
+def build_uploaded_pipeline(text,filename='team.csv'):
+    """Parse a single team CSV into the existing three-source ontology pipeline."""
+    if not text.strip():raise ValueError('The CSV is empty')
+    if len(text.encode('utf-8'))>1048576:raise ValueError('CSV must be at most 1 MB')
+    reader=csv.DictReader(io.StringIO(text.lstrip('\ufeff'),newline=''),strict=True)
+    try:fields=reader.fieldnames or []
+    except csv.Error as e:raise ValueError('Malformed CSV header') from e
+    if len(fields)!=len(set(fields)) or not set(UPLOAD_REQUIRED)<=set(fields) or set(fields)-set(UPLOAD_REQUIRED+UPLOAD_OPTIONAL):
+        raise ValueError('CSV columns must include: '+', '.join(UPLOAD_REQUIRED)+'. Optional: '+', '.join(UPLOAD_OPTIONAL))
+    rows=[]
+    try:
+        for row in reader:
+            if None in row or any(v is None for v in row.values()):raise ValueError('CSV row has missing or extra columns')
+            if any(not row[k].strip() for k in ['name','email','title','team','expertise','context_notes']):
+                raise ValueError('Each person needs name, email, title, team, expertise, and context_notes')
+            if any(len(v)>12000 for v in row.values()):raise ValueError('A CSV field exceeds 12,000 characters')
+            rows.append(row)
+            if len(rows)>200:raise ValueError('CSV supports up to 200 people rows')
+    except csv.Error as e:raise ValueError('Malformed CSV: check quoting and commas') from e
+    if not rows:raise ValueError('CSV must include at least one person')
+    aliases=people_aliases(rows)
+    contexts={}
+    collaborations=[];seen_collaborations=set()
+    for row in rows:
+        pid=aliases[normalize(row['email'])]
+        notes={k:row[k].strip() for k in ['expertise','context_notes']}
+        if pid in contexts and contexts[pid]!=notes:raise ValueError('Duplicate person has conflicting expertise or context_notes')
+        contexts[pid]=notes
+        for other in row.get('works_with','').split(';'):
+            if other.strip():
+                other_id=aliases.get(normalize(other),normalize(other));description=row.get('collaboration_context','').strip()
+                key=(*sorted([pid,other_id]),description)
+                if key not in seen_collaborations:
+                    collaborations.append({'person_a':row['email'],'person_b':other.strip(),'context':description});seen_collaborations.add(key)
+    source='upload://'+uuid4().hex
+    with tempfile.TemporaryDirectory(prefix='fernwood-csv-') as directory:
+        sets={'org_chart':[{k:r[k] for k in INPUTS['org_chart']} for r in rows],
+              'person_context':[dict(email=pid,**notes) for pid,notes in contexts.items()],
+              'collaborations':collaborations}
+        for kind,data in sets.items():
+            with (Path(directory)/(kind+'.csv')).open('w',newline='') as f:
+                writer=csv.DictWriter(f,fieldnames=INPUTS[kind]);writer.writeheader();writer.writerows(data)
+        pipeline=build_pipeline(directory,source+'/derived')
+    pipeline['raw_files'].insert(0,{'id':'uploaded_csv','batch_id':pipeline['batch_id'],'filename':filename,
+        'content':text,'sha256':hashlib.sha256(text.encode()).hexdigest(),'source_file':source+'/'+filename,'ingested_at':pipeline['created_at']})
+    pipeline['input_format']='uploaded_team_csv'
     return pipeline

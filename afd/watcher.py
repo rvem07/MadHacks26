@@ -18,7 +18,7 @@ COVERAGE=[('policy / approvals',['approvals','hr policy'],2),('payroll / balance
           ('calendar / frontend',['frontend'],1),('design',['design'],1),
           ('coverage / blackouts',['coverage','blackout'],2)]
 EVENT_TYPES={'moving','asking','answered','searching','search_results','search_unavailable',
-             'phase_started','retrying','spec_written','committing','committed','test_result','done','error'}
+             'implementation','phase_started','retrying','spec_written','committing','committed','test_result','done','error'}
 
 
 def model_json(kind,payload,max_tokens=2500):
@@ -54,6 +54,8 @@ class Watcher:
         self.db=db; self.model=model or model_json; self.background=background
         self.dwell=max(0.0,float(os.getenv('DWELL_SECONDS','1'))) if dwell is None else dwell
         self.lock=threading.RLock(); self.workers={}
+        from .ingestion import Ingestor
+        self.ingestor=Ingestor(db,background)
 
     def get(self,rid):
         doc=self.db.get('run:'+rid)
@@ -87,6 +89,7 @@ class Watcher:
             t=threading.Thread(target=self._work,args=(rid,),daemon=True);self.workers[rid]=t;t.start()
 
     def recover(self):
+        self.ingestor.recover()
         # Pipeline data is immutable; don't reproject every historical batch during startup.
         for doc in self.db.list('run:'):
             self.db.project(doc)
@@ -137,6 +140,11 @@ class Watcher:
                 reject_secrets(result)
                 self.db.put({'id':key,'decision':result,'created_at':now_iso()},(cached or {}).get('revision',0))
             return {'person':pid,'question':question,'from_person':previous,'adjacent':pid in adjacent}
+        candidates=[p for p in graph['nodes'] if p['id'] not in asked]
+        if candidates:
+            person=min(candidates,key=lambda p:(p['id'] not in adjacent,p['id']))
+            return {'person':person['id'],'question':'What requirements and constraints should this app follow based on your expertise?',
+                'from_person':previous,'adjacent':person['id'] in adjacent}
         return None
 
     def persona(self,person,question,fresh=False):

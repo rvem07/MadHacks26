@@ -237,6 +237,7 @@ def test_publish_saved_reuses_artifacts_and_rejects_active_run(db,monkeypatch):
     scheduled=[];monkeypatch.setattr(w,'schedule',scheduled.append)
     assert api.publish_saved(rid)=={'run_id':rid}
     saved=w.get(rid)
+    saved['test_result']={'status':'passed','production_build':'passed'}
     assert not saved['dry_run'] and saved['status']=='running' and scheduled==[rid]
     published=[];monkeypatch.setattr(afd.git_output,'publish',lambda w,d:published.extend(d['artifacts']))
     build(w,saved)
@@ -254,12 +255,13 @@ def test_publish_writes_all_files_and_resumes_without_duplicate_commits(db,monke
         client=type('Client',(),{'close':lambda self:None})()
         def preflight(self):return {'status':'passed','commits':[]}
         def head(self,branch):return 'head'
+        def reset_demo(self,rid):return 'clean'
         def commit(self,branch,message,files):
             writes.append(files)
             return {'sha':str(len(writes)),'message':message,'commit_url':self.url+'/commit/'+str(len(writes))}
     monkeypatch.setattr(git,'GitHubRepo',Repo)
     w=Watcher(db,background=False,dwell=0);doc=w.get(w.start()['run_id'])
-    doc.update(artifacts=[{'path':p,'content':'source '+p} for _,paths in GROUPS for p in paths],spec={'requirements':[]},test_result={'status':'passed'})
+    doc.update(artifacts=[{'path':p,'content':'source '+p} for _,paths in GROUPS for p in paths],spec={'requirements':[]},test_result={'status':'passed','production_build':'passed'})
     git.publish(w,doc)
     assert len(writes)==5 and len(doc['commits'])==5 and doc['status']=='done'
     assert {p:c for files in writes for p,c in files.items()}=={f['path']:f['content'] for f in doc['artifacts']}
@@ -358,3 +360,49 @@ def test_failed_recovery_does_not_take_down_app(monkeypatch):
         assert failed.wait(1)
         assert client.get('/health').status_code==200
         assert client.get('/').status_code==200
+
+
+def test_demo_reset_preserves_readme_and_history(monkeypatch):
+    from afd.git_output import GitHubRepo
+    monkeypatch.setenv('GITHUB_TOKEN','fixture');monkeypatch.setenv('GITHUB_REPO_URL','https://github.com/Kman771/Test-Repo')
+    repo=GitHubRepo();calls=[];head=['old']
+    def call(method,path,body=None):
+        calls.append((method,path,body))
+        if path=='':return {'default_branch':'main'}
+        if path=='/git/ref/heads/main':return {'object':{'sha':head[0]}}
+        if path=='/git/commits/old':return {'message':'old','tree':{'sha':'oldtree'}}
+        if path=='/git/trees/oldtree':return {'tree':[{'path':'README.md','type':'blob','sha':'readme'},{'path':'src','type':'tree','sha':'oldsrc'}]}
+        if path=='/git/trees':return {'sha':'clean'}
+        if path=='/git/commits':return {'sha':'new'}
+        if method=='PATCH':head[0]='new';return {}
+        raise AssertionError(path)
+    monkeypatch.setattr(repo,'call',call)
+    assert repo.reset_demo('run')=='new'
+    tree=next(b for m,p,b in calls if m=='POST' and p=='/git/trees')
+    assert 'base_tree' not in tree and [e['path'] for e in tree['tree']]==['README.md']
+    assert next(b for m,p,b in calls if p=='/git/commits')['parents']==['old']
+    assert next(b for m,p,b in calls if m=='PATCH')['force'] is False
+    repo.url='https://github.com/rvem07/MadHacks26'
+    with pytest.raises(ValueError,match='restricted'):repo.reset_demo('run')
+    repo.client.close()
+
+
+def test_demo_reset_recovers_existing_cleanup_commit(monkeypatch):
+    from afd.git_output import GitHubRepo
+    monkeypatch.setenv('GITHUB_TOKEN','fixture');monkeypatch.setenv('GITHUB_REPO_URL','https://github.com/Kman771/Test-Repo')
+    repo=GitHubRepo()
+    def call(method,path,body=None):
+        assert method=='GET'
+        if path=='':return {'default_branch':'main'}
+        if path.startswith('/git/ref/'):return {'object':{'sha':'clean'}}
+        return {'message':'Prepare README-only demo base [run]'}
+    monkeypatch.setattr(repo,'call',call);assert repo.reset_demo('run')=='clean';repo.client.close()
+
+
+def test_implementation_explanation_requires_source_evidence():
+    from afd.build import implementation_summary
+    doc={'spec':{'requirements':[{'requirement':'PTO notice requires 14 days','source_person_email':'hr@example.test'}]}}
+    assert not implementation_summary(doc,{'src/logic.ts':''})['decisions']
+    result=implementation_summary(doc,{'src/logic.ts':'export function noticeValid() { return true; }'})
+    assert result['decisions'][0]['source_person_email']=='hr@example.test'
+    assert result['decisions'][0]['path']=='src/logic.ts'
