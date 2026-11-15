@@ -1,0 +1,15 @@
+# Worktrees created for isolated development (never commit their contents)
+.claude/worktrees/
+.worktrees/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local runtime state written by the app (JSON store, simulated repo, benchmark output)
+data/
+
+# OS / editor noise
+.DS_Store
