@@ -1,0 +1,8 @@
+# Runtime (also what Databricks Apps installs from this file)
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.7
+databricks-sdk>=0.40
+httpx>=0.27
+# Optional: MLflow Tracing for low-level spans (used only if importable)
+mlflow-skinny>=2.20
