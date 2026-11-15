@@ -119,6 +119,8 @@ class ScriptedPolicy:
     # -- investigate ------------------------------------------------------------
     def stage_investigate(self) -> None:
         if not self.has_tool("investigate", "ontology_traverse"):
+            if self.has_tool("investigate", "genie_query"):
+                return self._investigate_with_genie()
             return self._investigate_without_ontology()
         if self.kind == "build":
             if not self.service:
@@ -262,6 +264,30 @@ class ScriptedPolicy:
                 best = max(people, key=lambda n: (n["confidence"], -n["age_days"]))
                 return {"person": best["node"]["id"], "edge_id": best["edge_id"], "describe": best["describe"]}
         return None
+
+    def _investigate_with_genie(self) -> None:
+        """Genie-only condition: ask the Genie space who owns the topic."""
+        r = self.call("genie_query", question=(f"{self.task} Using the ontology edges table, which person owns or "
+                                               f"is responsible for it? Answer with the person's full name."))
+        if r["status"] != "ok":
+            self.outcome = "escalated"
+            return
+        haystack = (str(r.get("text", "")) + " " + str(r.get("rows", ""))).lower()
+        people = [n for n in self.ctx.graph.nodes.values() if n["type"] == "person"]
+        hits = [p for p in people if p["label"].lower() in haystack or p["id"] in haystack]
+        if not hits:
+            self.outcome = "escalated"
+            self.call("record_decision", options=[], chosen="escalate to the requester",
+                      rationale="Genie's answer did not name anyone.", evidence_refs=[r["event_id"]])
+            return
+        person = hits[0]
+        self.call("record_decision", options=[p["label"] for p in hits], chosen=person["label"],
+                  rationale="Genie named this person.", evidence_refs=[r["event_id"]], node_ids=[person["id"]])
+        self.owner = {"person": person["id"], "edge_id": "", "describe": "named by Genie"}
+        q = self.call("ask_human", person_id=person["id"], question=f"Question about: {self.task}", edge_ids=[])
+        if q["status"] == "ok":
+            self.answer = {"text": q.get("reply", ""), "event_id": q["event_id"], "ask_event": q.get("asked_event")}
+        self.outcome = f"asked:{person['id']}"
 
     def _investigate_without_ontology(self) -> None:
         """No-ontology condition: rely on the (stale) team wiki page."""
