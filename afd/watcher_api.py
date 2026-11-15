@@ -7,7 +7,7 @@ from .preflight import check_connection
 router=APIRouter()
 class StartRequest(BaseModel):
     task:str=Field(default=DEFAULT_TASK,min_length=1,max_length=4000)
-    dry_run:bool=True
+    dry_run:bool=False
     fresh:bool=False
 
 @router.get('/graph')
@@ -51,3 +51,18 @@ def test_connection(): return check_connection(write_probe=False)
 
 @router.post('/setup/preflight')
 def preflight(): return check_connection(write_probe=True)
+
+@router.post('/runs/{rid}/publish')
+def publish_saved(rid:str):
+    w=get_watcher()
+    with w.lock:
+        doc=w.get(rid)
+        if doc['status']=='running' or not doc.get('artifacts'):
+            raise HTTPException(409,'Wait for generated files before publishing')
+        if doc.get('commits') and doc['status']=='done':
+            return {'run_id':rid}
+        doc['dry_run']=False
+        doc['status']='running'
+        w.commit(doc)
+        w.schedule(rid)
+    return {'run_id':rid}

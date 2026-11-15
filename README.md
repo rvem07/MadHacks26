@@ -52,7 +52,7 @@ Configured destination found in the workspace:
 
 The destination is a sibling of the Watcher's bundle folder, not nested inside its Git repository. Current preflight evidence is in `docs/preflight.json`. The App can read the folder and reach `api.github.com`. Workspace API write returned `RESOURCE_DOES_NOT_EXIST` for the existing parent folder. This is not proof of a permission problem: the folder has Git CLI storage, and API/compute support must be checked separately. Standard Repos APIs provide no commit/push operation.
 
-The Databricks serverless Git CLI probe created a local commit but GitHub rejected push with HTTP 403. Cleanup removed the probe file and restored main. See `docs/git-preflight-result.json`. The selected fallback is GitHub REST API, pending its repo-scoped token. No remote commits are claimed; only main exists on GitHub after the failed probe. The Setup panel reports the selected path and offers a read-only connection check. If direct Git cannot work, use a fine-grained GitHub PAT restricted to **Kman771/Test-Repo**, Contents read/write, as a Databricks secret with key `GITHUB_TOKEN`, referenced through an App secret resource. No PAT is currently configured or copied from the developer's local credentials.
+The Databricks serverless Git CLI probe created a local commit but GitHub rejected push with HTTP 403. Cleanup removed the probe file and restored main. See `docs/git-preflight-result.json`. The selected fallback is GitHub REST API, pending its repo-scoped token. No remote commits are claimed; only main exists on GitHub after the failed probe. The Setup panel reports the selected path and offers a read-only connection check. If direct Git cannot work, use a fine-grained GitHub PAT restricted to **Kman771/Test-Repo**, Contents read/write, as a Databricks secret with key `GITHUB_TOKEN`, referenced through an App secret resource. The bundle binds the `fernwood/GITHUB_TOKEN` secret to the App through its `github-token` resource.
 
 ## Search setup
 
@@ -86,11 +86,13 @@ After the keys exist, add these entries to `resources.apps.watcher.resources` in
     permission: READ
 ```
 
-Add `GITHUB_TOKEN` with `valueFrom: github-token` to `app.yaml` as well, then redeploy. The first real publish verifies GitHub API create/delete commits on a separate preflight branch before creating the app's branch. Setup's Test connection is read-only; `POST /api/setup/preflight` explicitly runs the write probe.
+`app.yaml` already references `GITHUB_TOKEN` through `valueFrom: github-token`, and the bundle declares that secret resource. After replacing the stored token, redeploy the App to load its new value. The first real publish verifies GitHub API create/delete commits on a separate preflight branch before creating the app's branch. Setup's Test connection is read-only; `POST /api/setup/preflight` explicitly runs the write probe.
 
 The bundle must declare the matching secret resources, or add them through the App resource UI. Do not put the value in YAML. No search key is configured in this deployment yet. Search emits visible `search_unavailable` events until configured; no URLs or search results are fabricated. Queries exclude employee names, emails, and company name. Only URLs returned with retrieved source text can be cited; a temperature-zero model paraphrases short key points.
 
 ## Demo
+
+Hover cards leave node colors unchanged. The green pulse indicates the agent’s current location, including time spent waiting for the next step. Direct travel trails connect visited nodes regardless of team relationships. Web search (purple), Coding (blue), and GitHub (amber) are separate workflow nodes; unavailable search is labeled and does not block building. Temporary transport failures retry up to twice from saved checkpoints.
 
 1. Open the deployed App with an authorized Databricks identity. A fresh incognito window still requires authentication; Apps are not anonymous websites.
 2. Click **Data**, inspect Raw CSV → Bronze → Silver → Gold, including quarantine, then click **Graph**.
@@ -110,7 +112,7 @@ The planner enforces coverage in this order: policy/approvals (two people), payr
 
 Personas receive only their own name/title/expertise/context plus the question. The model selects note indices; code renders one to three grouped sentences from those notes, preventing invented persona facts. Out-of-context answers explicitly say they do not know. Cache keys include person, question hash and context content, so changed facts do not reuse stale answers. Model-generated next-person decisions are cached in Delta checkpoints by the full planning input, so identical reruns reuse the same questions as well as persona answers. Fresh answers also bypasses this planning cache. Temperature zero alone is not assumed to make a serving endpoint mathematically deterministic.
 
-`DWELL_SECONDS=3` is deliberate pacing, enforced even for cached answers. Live rendering and replay also respect the persisted asking duration; SQL/model latency can make visits longer. All activity comes from the event table; static layout, UI chrome, and graph/data tables are not activity events.
+`DWELL_SECONDS=1` is the default minimum dwell, including cached answers. Movement takes 450ms and old replays cap each asking pause at one second; SQL/model latency can make visits longer. Build & push publishes generated source to a new GitHub branch by default. Preview only saves files in Delta; its completion card can publish those same files without regenerating them. Configure the GitHub App secret described above before publishing. All activity comes from the event table; static layout, UI chrome, and graph/data tables are not activity events.
 
 Approval for **6–10 consecutive days is unspecified**. Generated software must flag it rather than invent authority. Demo logic interprets notice length as business days and notice lead time as calendar days; the generated README states that assumption. Real Google Workspace login and live balances are out of scope for the generated small mock app. Do not use it with real employee data.
 

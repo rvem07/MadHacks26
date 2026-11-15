@@ -1,6 +1,9 @@
 bundle:
   name: agent-watcher
 sync:
+  exclude:
+    - .worktrees/**
+    - .claude/**
   include:
     - data/org_chart.csv
     - data/collaborations.csv
@@ -38,6 +41,11 @@ resources:
       compute_min_instances: 1
       source_code_path: .
       resources:
+        - name: github-token
+          secret:
+            scope: fernwood
+            key: GITHUB_TOKEN
+            permission: READ
         - name: sql-warehouse
           sql_warehouse:
             id: ${var.warehouse_id}

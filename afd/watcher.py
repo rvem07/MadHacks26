@@ -18,7 +18,7 @@ COVERAGE=[('policy / approvals',['approvals','hr policy'],2),('payroll / balance
           ('calendar / frontend',['frontend'],1),('design',['design'],1),
           ('coverage / blackouts',['coverage','blackout'],2)]
 EVENT_TYPES={'moving','asking','answered','searching','search_results','search_unavailable',
-             'spec_written','committing','committed','test_result','done','error'}
+             'phase_started','retrying','spec_written','committing','committed','test_result','done','error'}
 
 
 def model_json(kind,payload,max_tokens=2500):
@@ -52,7 +52,7 @@ Types include requests(id,employee_email,start_date,end_date,type,status,approve
 class Watcher:
     def __init__(self,db,model=None,background=True,dwell=None):
         self.db=db; self.model=model or model_json; self.background=background
-        self.dwell=max(3.0,float(os.getenv('DWELL_SECONDS','3'))) if dwell is None else dwell
+        self.dwell=max(0.0,float(os.getenv('DWELL_SECONDS','1'))) if dwell is None else dwell
         self.lock=threading.RLock(); self.workers={}
 
     def get(self,rid):
@@ -72,7 +72,7 @@ class Watcher:
           type=typ,actor=actor,target_person=target,payload=payload or {},duration_ms=duration_ms))
         saved=self.commit(doc); doc.clear(); doc.update(saved)
 
-    def start(self,task=DEFAULT_TASK,dry_run=True,fresh=False):
+    def start(self,task=DEFAULT_TASK,dry_run=False,fresh=False):
         reject_secrets(task)
         graph=self.db.graph(); rid=uuid4().hex
         doc=dict(id='run:'+rid,run_id=rid,task=task,status='running',batch_id=graph['batch_id'],created_at=now_iso(),
@@ -93,11 +93,24 @@ class Watcher:
             if doc['status']=='running': self.schedule(doc['run_id'])
 
     def _work(self,rid):
-        try: self.execute(rid)
-        except Exception as e:
-            # Exception text may include provider credentials/requests; never persist it.
-            doc=self.get(rid); doc['status']='error'
-            self.event(doc,'error',{'message':'Run stopped: '+type(e).__name__+'. Check Setup and retry.','retryable':True})
+        for attempt in range(3):
+            try:
+                self.execute(rid)
+                return
+            except Exception as e:
+                # Preserve checkpoints; retry temporary transport/provider failures only.
+                import httpx
+                from .git_output import GitHubError
+                transient=(isinstance(e,GitHubError) and e.status in {429,500,502,503,504}) or isinstance(e,(TimeoutError,ConnectionError,httpx.TransportError)) or (
+                    isinstance(e,httpx.HTTPStatusError) and e.response.status_code in {429,500,502,503,504})
+                if transient and attempt<2:
+                    doc=self.get(rid)
+                    self.event(doc,'retrying',{'message':'Temporary connection delay. Continuing from the saved step.','attempt':attempt+1})
+                    time.sleep(attempt+1)
+                    continue
+                doc=self.get(rid); doc['status']='error'
+                self.event(doc,'error',{'message':e.user_message if isinstance(e,GitHubError) else 'Run stopped: '+type(e).__name__+'. Check Setup and retry.','retryable':True})
+                return
 
     def next_question(self,doc,graph):
         asked={r['person_email'] for r in doc['run_context']}
@@ -156,7 +169,7 @@ class Watcher:
             if not pending: break
             if not doc.get('pending'):
                 doc['pending']=pending
-                self.event(doc,'moving',pending,target=pending['person'],duration_ms=900)
+                self.event(doc,'moving',pending,target=pending['person'],duration_ms=450)
                 self.event(doc,'asking',{'question':pending['question'],'simulated':True},target=pending['person'],duration_ms=int(self.dwell*1000))
             start=time.monotonic()
             answer,cached=self.persona(people[pending['person']],pending['question'],doc['fresh'])
@@ -167,9 +180,11 @@ class Watcher:
             self.event(doc,'answered',dict(row,simulated=True,name=people[row['person_email']]['name']),target=row['person_email'],duration_ms=round((time.monotonic()-start)*1000),actor='persona')
         if not doc.get('research_complete'):
             from .research import research
+            self.event(doc,'phase_started',{'stage':'search','message':'Checking external technical references.'})
             research(self,doc)
             doc['research_complete']=True;doc=self.commit(doc)
         if not doc.get('spec'):
+            self.event(doc,'phase_started',{'stage':'code','message':'Turning collected requirements into an app specification.'})
             answers={r['person_email']:r['answer'] for r in doc['run_context']}
             spec=self.model('spec',{'task':doc['task'],'answers':answers})
             if not isinstance(spec.get('requirements'),list) or not spec['requirements']: raise ValueError('Empty spec')

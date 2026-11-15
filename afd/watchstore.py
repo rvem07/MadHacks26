@@ -50,7 +50,7 @@ class DeltaDocuments:
         self.mode = 'delta'
         self._projected = {}
 
-    def sql(self, statement, values=None):
+    def sql(self, statement, values=None, _conflict_attempt=0):
         from databricks.sdk.service.sql import StatementParameterListItem
         parameters = [StatementParameterListItem(name=k, value=None if v is None else str(v)) for k, v in (values or {}).items()]
         r = self.client.statement_execution.execute_statement(statement=statement, warehouse_id=self.warehouse_id,
@@ -64,6 +64,10 @@ class DeltaDocuments:
             time.sleep(0.25)
             r = self.client.statement_execution.get_statement(r.statement_id)
         if r.status.state.value != 'SUCCEEDED':
+            error=str(r.status.error)
+            if statement.lstrip().upper().startswith('MERGE') and 'DELTA_CONCURRENT' in error and _conflict_attempt<3:
+                time.sleep(0.5 * 2**_conflict_attempt)
+                return self.sql(statement,values,_conflict_attempt+1)
             raise RuntimeError(f'Databricks SQL failed: {r.status.error}')
         if r.manifest and r.manifest.truncated:
             raise RuntimeError('SQL result truncated; refusing incomplete state')

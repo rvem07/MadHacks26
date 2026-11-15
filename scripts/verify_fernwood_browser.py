@@ -19,7 +19,7 @@ with sync_playwright() as pw:
  try:
   page.goto(url);expect(page.get_by_role('heading',name='Agent Watcher',exact=True)).to_be_visible()
   page.wait_for_function('state.cy && state.graph')
-  assert page.evaluate('state.cy.nodes().length')==10
+  assert page.evaluate("state.cy.nodes().not('.stage').length")==10
   assert page.evaluate("state.cy.nodes('.review').length")==2
   assert page.evaluate("state.cy.edges('.quarantined').length")==2
   assert page.locator('#dangling line').count()==1
@@ -49,7 +49,7 @@ with sync_playwright() as pw:
    events=page.evaluate("()=>api('/runs/'+state.run+'/events')")
    answers=[e for e in events if e['type']=='answered']
    assert len(answers)>=6 and len({e['target_person'] for e in answers})==len(answers)
-   assert all(e['duration_ms']>=3000 and e['payload']['simulated'] for e in answers)
+   assert all(e['duration_ms']>=1000 and e['payload']['simulated'] for e in answers)
    report['checks']['live_personas_and_dwell']='passed'
    report['checks']['real_search']='passed' if any(e['type']=='search_results' for e in events) else 'unavailable; no provider key configured'
    report['test_results']=[e['payload'] for e in events if e['type']=='test_result']

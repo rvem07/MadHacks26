@@ -2,7 +2,7 @@
 const $=id=>document.getElementById(id);
 function h(tag,props={},...children){const el=tag==='svg'?document.createElementNS('http://www.w3.org/2000/svg',tag):document.createElement(tag);for(const [key,v] of Object.entries(props)){if(key.startsWith('on'))el.addEventListener(key.slice(2),v);else if(key==='class')el.className=v;else if(key==='checked'||key==='hidden')el[key]=v;else el.setAttribute(key,v)}for(const child of children.flat(Infinity)){if(child!==null&&child!==undefined)el.append(child instanceof Node?child:document.createTextNode(String(child)))}return el}
 async function api(path,options={}){const r=await fetch('/api'+path,{...options,headers:{'Content-Type':'application/json'},body:options.body?JSON.stringify(options.body):undefined});if(!r.ok)throw new Error('Request failed ('+r.status+'). Check Setup or refresh.');return r.json()}
-const state={cy:null,graph:null,run:null,epoch:0,last:0,replay:false,pinned:false,active:null};
+const state={cy:null,graph:null,run:null,epoch:0,last:0,replay:false,pinned:false,active:null,location:null};
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 function link(url,title){try{const u=new URL(url);if(u.protocol!=='https:'||u.username||u.password)return h('span',{},title);return h('a',{href:u.href,target:'_blank',rel:'noopener noreferrer'},title)}catch{return h('span',{},title)}}
@@ -13,61 +13,103 @@ async function boot(){
    h('nav',{class:'toolbar','aria-label':'Workspace'},h('span',{id:'mode',class:'badge'},'LIVE · DELTA'),h('button',{id:'viewToggle'},'Data'),h('button',{id:'replay'},'Replay last run'),h('button',{id:'setup','aria-label':'Setup'},'⚙ Setup'))),
   h('div',{id:'stats',class:'stats'}),
   h('div',{id:'graphView',class:'workspace'},
-   h('section',{class:'graph-pane','aria-label':'People graph'},h('div',{class:'graph-head'},h('h2',{},'Your team, connected.'),h('p',{},'Ten people. Shared knowledge. One agent.')),h('div',{id:'cy'}),h('svg',{id:'dangling','aria-hidden':'true'}),h('div',{id:'token',hidden:true}),h('div',{id:'card',hidden:true}),h('div',{class:'person-buttons'},h('select',{id:'personSelect','aria-label':'Inspect a person'},h('option',{value:''},'Inspect a person…'))),h('div',{class:'legend'},h('span',{},'Reports to'),h('span',{},'Works with'),h('span',{},'Needs review'))),
+   h('section',{class:'graph-pane','aria-label':'People graph'},h('div',{class:'graph-head'},h('h2',{},'Your team, connected.'),h('p',{},'Ten people. Shared knowledge. One agent.')),h('div',{id:'cy'}),h('svg',{id:'dangling','aria-hidden':'true'}),h('svg',{id:'travel','aria-hidden':'true'}),h('div',{id:'token',hidden:true}),h('div',{id:'card',hidden:true}),h('div',{class:'person-buttons'},h('select',{id:'personSelect','aria-label':'Inspect a person'},h('option',{value:''},'Inspect a person…'))),h('div',{class:'legend'},h('span',{},'Reports to'),h('span',{},'Works with'),h('span',{},'Needs review'))),
    h('aside',{class:'timeline'},h('div',{class:'panel-head'},h('h2',{},'Live activity'),h('small',{id:'stepCount'},'Ready')),h('ol',{id:'timeline','aria-live':'polite'},h('li',{class:'empty'},'Watch the agent discover what your team knows.','\n','Every step is saved in Unity Catalog.')))),
   h('section',{id:'dataView',class:'data-pane',hidden:true},h('h2',{},'From source to shared understanding'),h('p',{class:'muted'},'Actual pipeline rows · active published batch'),h('div',{id:'dataTabs',class:'tabs'}),h('div',{id:'tableOptions',class:'table-options'}),h('div',{id:'tableRows',class:'table-scroll'})),
-  h('section',{class:'compose'},h('label',{for:'task'},'WHAT SHOULD THE AGENT BUILD?'),h('div',{class:'prompt-row'},h('textarea',{id:'task',rows:2},'Build an internal time-off request tracker for our team.'),h('button',{id:'run',class:'primary'},'Run ↗')),h('div',{class:'options'},h('label',{},h('input',{id:'dry',type:'checkbox',checked:true}),'Dry run · preview files'),h('label',{},h('input',{id:'fresh',type:'checkbox'}),'Fresh persona answers'),h('span',{id:'runStatus',role:'status'},'Ready to listen.'))),h('p',{id:'error',role:'alert'}),
+  h('section',{class:'compose'},h('label',{for:'task'},'WHAT SHOULD THE AGENT BUILD?'),h('div',{class:'prompt-row'},h('textarea',{id:'task',rows:2},'Build an internal time-off request tracker for our team.'),h('button',{id:'run',class:'primary'},'Build & push ↗')),h('div',{class:'options'},h('label',{},h('input',{id:'dry',type:'checkbox',checked:false}),'Preview only · skip GitHub'),h('label',{},h('input',{id:'fresh',type:'checkbox'}),'Fresh persona answers'),h('span',{id:'runStatus',role:'status'},'Ready to listen.'))),h('p',{id:'error',role:'alert'}),
   h('dialog',{id:'setupDialog',class:'dialog'},h('h2',{},'Setup'),h('div',{id:'setupBody'}),h('pre',{id:'connectionResult'}),h('div',{class:'actions'},h('button',{id:'testConnection'},'Test connection'),h('button',{onclick:()=>$('setupDialog').close()},'Done')))));
  state.graph=await api('/graph');const s=state.graph.stats;
  $('stats').append(...[[s.raw_people_rows,'raw rows'],[s.unique_people,'people'],[s.fuzzy_duplicates_merged,'merged'],[s.exact_duplicates_collapsed,'collapsed'],[s.relationships_quarantined,'quarantined'],[s.valid_collab_edges,'collaborations']].map(([n,label])=>h('div',{class:'stat'},h('strong',{},n),h('small',{},label))));
- graph();$('run').onclick=()=>start().catch(error);$('setup').onclick=()=>setup().catch(error);$('replay').onclick=()=>replay().catch(error);
+ graph();$('dry').onchange=()=>{$('run').textContent=$('dry').checked?'Preview files ↗':'Build & push ↗'};$('run').onclick=()=>start().catch(error);$('setup').onclick=()=>setup().catch(error);$('replay').onclick=()=>replay().catch(error);
  $('viewToggle').onclick=async()=>{const data=$('dataView').hidden;$('dataView').hidden=!data;$('graphView').hidden=data;$('viewToggle').textContent=data?'Graph':'Data';if(data)await dataTab('Raw CSV');else{state.cy.resize();state.cy.fit(undefined,65)}};
  for(const name of Object.keys(TABLES))$('dataTabs').append(h('button',{'data-tab':name,onclick:()=>dataTab(name).catch(error)},name));
  const saved=localStorage.getItem('fernwood.run');if(saved){const prior=(await api('/runs')).find(r=>r.run_id===saved);if(prior?.status==='running'){state.run=saved;watch(++state.epoch).catch(error)}else if(prior)replay(saved).catch(error)}
 }
+const STAGES=[{id:'stage:search',label:'Web search',color:'#8b5cf6'},{id:'stage:code',label:'Coding',color:'#3b82f6'},{id:'stage:github',label:'GitHub',color:'#f59e0b'}];
 function graph(){
  const nodes=state.graph.nodes,ids=new Set(nodes.map(n=>n.id)),valid=state.graph.edges.filter(e=>ids.has(e.src)&&ids.has(e.dst));
  const depth=id=>{let cursor=id,seen=new Set();while(!seen.has(cursor)){seen.add(cursor);const e=valid.find(e=>e.src===cursor&&e.type==='reports_to'&&e.status==='valid');if(!e)break;cursor=e.dst}return seen.size-1};
  const ranks=new Map();for(const n of nodes){const d=depth(n.id);if(!ranks.has(d))ranks.set(d,[]);ranks.get(d).push(n)}
  const positions={};for(const [rank,people]of ranks){people.sort((a,b)=>a.team.localeCompare(b.team)||a.name.localeCompare(b.name));people.forEach((n,i)=>positions[n.id]={x:(i-(people.length-1)/2)*155,y:rank*175})}
- state.cy=cytoscape({container:$('cy'),elements:[...nodes.map(n=>({data:{...n,label:n.name.replace(' ','\n')+(n.needs_review?' ◦':'')},position:positions[n.id],classes:n.needs_review?'review':''})),...valid.map(e=>({data:{...e,source:e.src,target:e.dst},classes:e.type+' '+e.status}))],layout:{name:'preset',padding:75},minZoom:.25,maxZoom:2,wheelSensitivity:.15,
+ state.cy=cytoscape({container:$('cy'),elements:[...nodes.map(n=>({data:{...n,label:n.name.replace(' ','\n')+(n.needs_review?' ◦':'')},position:positions[n.id],classes:n.needs_review?'review':''})),...STAGES.map((n,i)=>({data:n,position:{x:430,y:i*175},classes:'stage'})),...valid.map(e=>({data:{...e,source:e.src,target:e.dst},classes:e.type+' '+e.status}))],layout:{name:'preset',padding:75},minZoom:.25,maxZoom:2,wheelSensitivity:.15,
  style:[{selector:'node',style:{label:'data(label)','text-wrap':'wrap','font-family':'-apple-system, sans-serif','font-size':11,'text-valign':'bottom','text-margin-y':12,color:'#698278','background-color':'#d0e3da','border-color':'#fff','border-width':3,width:43,height:43}},
  {selector:'node.review',style:{'border-color':'#c49b58','border-width':2,'border-style':'dashed'}},
- {selector:'node.active',style:{'background-color':'#0f766e','underlay-color':'#39b99d','underlay-opacity':.18,'underlay-padding':14}},
- {selector:'node.answered',style:{'background-color':'#63b7a3'}},{selector:'node.selected',style:{'border-color':'#0f766e','border-width':5}},
+ {selector:'node.stage',style:{'background-color':'data(color)',shape:'round-rectangle',width:48,height:48,color:'#58667a'}},
+ {selector:'node.active',style:{'background-color':'#22c55e','underlay-color':'#39b99d','underlay-opacity':.18,'underlay-padding':14}},
+ {selector:'node.answered',style:{'border-color':'#94a3b8'}},{selector:'node.stage.active',style:{'background-color':'data(color)'}},
  {selector:'edge',style:{width:1.3,'line-color':'#b3c5bc','curve-style':'bezier','target-arrow-shape':'triangle','target-arrow-color':'#b3c5bc','arrow-scale':.65}},
  {selector:'edge.works_with',style:{'target-arrow-shape':'none',width:1,opacity:.4,'line-color':'#98b6a6'}},
  {selector:'edge.quarantined',style:{'line-style':'dashed','line-color':'#bc9758','target-arrow-color':'#bc9758',opacity:.8}},
  {selector:'edge.traversed',style:{'line-color':'#0f766e','target-arrow-color':'#0f766e',width:3,opacity:1}}]});
  state.cy.on('mouseover','node',e=>{if(!state.pinned)card(e.target.id())});state.cy.on('mouseout','node',()=>{if(!state.pinned)$('card').hidden=true});state.cy.on('tap','node',e=>{state.pinned=true;card(e.target.id())});state.cy.on('tap',e=>{if(e.target===state.cy){state.pinned=false;$('card').hidden=true}});
- state.cy.on('pan zoom resize',dangling);dangling();
+ state.cy.on('pan zoom resize position',()=>{dangling();positionPulse()});dangling();
  for(const n of nodes)$('personSelect').append(h('option',{value:n.id},n.name));$('personSelect').onchange=()=>{state.pinned=true;card($('personSelect').value)};
  window.addEventListener('resize',()=>{state.cy.resize();state.cy.fit(undefined,65)});
 }
 function dangling(){const svg=$('dangling');svg.replaceChildren();for(const e of state.graph.edges.filter(e=>!state.cy.getElementById(e.dst).length)){const p=state.cy.getElementById(e.src).renderedPosition();if(!p)continue;const ns='http://www.w3.org/2000/svg',line=document.createElementNS(ns,'line'),label=document.createElementNS(ns,'text');for(const[k,v]of Object.entries({x1:p.x,y1:p.y,x2:p.x-40,y2:p.y-42,stroke:'#bc9758','stroke-dasharray':'4 4'}))line.setAttribute(k,v);label.setAttribute('x',p.x-75);label.setAttribute('y',p.y-49);label.setAttribute('font-size','9');label.setAttribute('fill','#ad8b51');label.textContent='Manager missing';svg.append(line,label)}}
-function card(id){const n=state.graph.nodes.find(x=>x.id===id);if(!n)return;state.cy.nodes().removeClass('selected');state.cy.getElementById(id).addClass('selected');const managers=state.graph.edges.filter(e=>e.src===id&&e.type==='reports_to').map(e=>state.graph.nodes.find(p=>p.id===e.dst)?.name||e.dst);$('card').replaceChildren(h('small',{},n.team+(state.pinned?' · PINNED':'')),h('h2',{},n.name),h('p',{},n.title),h('small',{},'Manager: '+(managers.join(' / ')||'None — company lead')),h('div',{class:'tags'},n.expertise.split(',').map(x=>h('span',{class:'tag'},x.trim()))),n.needs_review?h('p',{class:'review'},'Needs review · '+n.review_reason.replaceAll('_',' ')):null);$('card').hidden=false}
-async function setup(){const s=await api('/setup');$('setupBody').replaceChildren(h('dl',{},...Object.entries(s).flatMap(([k,v])=>[h('dt',{},k.replaceAll('_',' ')),h('dd',{},String(v))])));$('setupDialog').showModal();$('testConnection').onclick=async()=>{try{$('testConnection').disabled=true;$('connectionResult').textContent='Checking from the App service principal…';$('connectionResult').textContent=JSON.stringify(await api('/setup/test',{method:'POST'}),null,2)}catch(e){error(e)}finally{$('testConnection').disabled=false}}}
+function card(id){const n=state.graph.nodes.find(x=>x.id===id);if(!n)return;const managers=state.graph.edges.filter(e=>e.src===id&&e.type==='reports_to').map(e=>state.graph.nodes.find(p=>p.id===e.dst)?.name||e.dst);$('card').replaceChildren(h('small',{},n.team+(state.pinned?' · PINNED':'')),h('h2',{},n.name),h('p',{},n.title),h('small',{},'Manager: '+(managers.join(' / ')||'None — company lead')),h('div',{class:'tags'},n.expertise.split(',').map(x=>h('span',{class:'tag'},x.trim()))),n.needs_review?h('p',{class:'review'},'Needs review · '+n.review_reason.replaceAll('_',' ')):null);$('card').hidden=false}
+async function setup(){$('setupDialog').showModal();$('setupBody').textContent='Loading configuration…';const s=await api('/setup');$('setupBody').replaceChildren(h('dl',{},...Object.entries(s).flatMap(([k,v])=>[h('dt',{},k.replaceAll('_',' ')),h('dd',{},String(v))])));$('testConnection').onclick=async()=>{try{$('testConnection').disabled=true;$('connectionResult').textContent='Checking from the App service principal…';$('connectionResult').textContent=JSON.stringify(await api('/setup/test',{method:'POST'}),null,2)}catch(e){error(e)}finally{$('testConnection').disabled=false}}}
 const TABLES={'Raw CSV':['raw_files'],'Bronze':['bronze_org_chart','bronze_collaborations','bronze_person_context'],'Silver':['silver_people','silver_relationships','quarantine'],'Gold':['nodes','edges','pipeline_stats','quarantine']};
 async function dataTab(name){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('selected',b.dataset.tab===name));$('tableOptions').replaceChildren(...TABLES[name].map(t=>h('button',{onclick:()=>dataTable(t).catch(error)},t.replaceAll('_',' '))));await dataTable(TABLES[name][0])}
 async function dataTable(table){$('tableRows').textContent='Querying Unity Catalog…';const {rows}=await api('/data/'+table);const keys=Array.from(new Set(rows.flatMap(Object.keys)));$('tableRows').replaceChildren(h('table',{},h('caption',{},table+' · '+rows.length+' rows'),h('thead',{},h('tr',{},keys.map(k=>h('th',{},k)))),h('tbody',{},rows.map(row=>h('tr',{},keys.map(k=>h('td',{},k==='content'?h('pre',{},row[k]):typeof row[k]==='object'?JSON.stringify(row[k]):String(row[k]??''))))))))}
-function clearRun(){state.last=0;state.active=null;$('timeline').replaceChildren();$('token').hidden=true;state.cy.elements().removeClass('active answered traversed');$('error').textContent=''}
+function clearRun(){for(const stage of STAGES)state.cy.getElementById(stage.id).data('label',stage.label);state.last=0;state.active=null;state.location=null;$('timeline').replaceChildren();$('token').hidden=true;$('travel').replaceChildren();state.cy.elements().removeClass('active answered traversed');$('error').textContent=''}
 async function start(){const epoch=++state.epoch;clearRun();state.replay=false;$('mode').textContent='LIVE · DELTA';$('mode').classList.remove('replay');$('run').disabled=true;try{const r=await api('/runs',{method:'POST',body:{task:$('task').value,dry_run:$('dry').checked,fresh:$('fresh').checked}});state.run=r.run_id;localStorage.setItem('fernwood.run',r.run_id);await watch(epoch)}catch(e){error(e);$('run').disabled=false}}
 async function watch(epoch){while(epoch===state.epoch){let events;try{events=await api('/runs/'+state.run+'/events?after='+state.last);$('error').textContent=''}catch(e){$('error').textContent='Reconnecting to the App…';await sleep(1000);continue}for(const e of events){if(epoch!==state.epoch)return;await renderEvent(e,epoch);state.last=e.seq;if(e.type==='done'||e.type==='error'){$('run').disabled=false;return}}await sleep(500)}}
 async function replay(id=null){const runs=await api('/runs');const run=id?runs.find(r=>r.run_id===id):(runs.find(r=>r.status==='done')||runs[0]);if(!run)throw new Error('No stored run to replay yet.');const epoch=++state.epoch;clearRun();state.run=run.run_id;state.replay=true;$('mode').textContent='REPLAY';$('mode').classList.add('replay');$('run').disabled=true;const events=await api('/runs/'+state.run+'/events');for(const e of events){if(epoch!==state.epoch)return;await renderEvent(e,epoch);state.last=e.seq}if(epoch===state.epoch){$('run').disabled=false;$('runStatus').textContent='Replay complete · stored events'}}
-async function move(e){const p=e.payload,n=state.cy.getElementById(e.target_person);if(!n.length)return;state.cy.nodes().removeClass('active');n.addClass('active');const from=state.cy.getElementById(p.from_person||'');const edge=state.cy.edges().filter(x=>(x.data('src')===p.from_person&&x.data('dst')===e.target_person)||(x.data('dst')===p.from_person&&x.data('src')===e.target_person));if(p.adjacent)edge.addClass('traversed');if(!reduced){const pos=n.renderedPosition(),pan=state.cy.pan();await state.cy.animation({pan:{x:pan.x+(state.cy.width()/2-pos.x)*.25,y:pan.y+(state.cy.height()/2-pos.y)*.25},duration:350,easing:'ease-out-cubic'}).play().promise('complete')}const end=n.renderedPosition(),start=from.length?from.renderedPosition():end;const token=$('token');token.hidden=false;const ms=reduced?0:e.duration_ms;const t0=performance.now();await new Promise(resolve=>{function frame(now){const t=ms?Math.min(1,(now-t0)/ms):1,u=1-Math.pow(1-t,3);token.style.left=(start.x+(end.x-start.x)*u)+'px';token.style.top=(start.y+(end.y-start.y)*u+(p.adjacent?Math.sin(u*Math.PI)*-18:0))+'px';if(t<1)requestAnimationFrame(frame);else resolve()}requestAnimationFrame(frame)});state.active=e.target_person}
+function positionPulse(){
+ if(!state.active)return;
+ const n=state.cy.getElementById(state.active),p=n.renderedPosition(),token=$('token');
+ token.style.left=p.x+'px';token.style.top=p.y+'px';
+ token.style.width=token.style.height=(n.renderedWidth()+10)+'px';
+}
+function activate(id){state.cy.nodes().removeClass('active');state.active=id;$('token').hidden=!id;if(id){state.cy.getElementById(id).addClass('active');positionPulse()}}
+async function move(e,epoch){
+ const p=e.payload,n=state.cy.getElementById(e.target_person);if(!n.length)return;
+ activate(null);
+ const from=state.cy.getElementById(p.from_person||'');
+
+ if(from.length&&!reduced){
+  const ns='http://www.w3.org/2000/svg',path=document.createElementNS(ns,'path');
+  path.setAttribute('class','travel-dash');path.setAttribute('fill','none');$('travel').append(path);
+  const startTime=performance.now(),ms=450;
+  await new Promise(resolve=>{function frame(now){
+   if(epoch!==state.epoch){path.remove();resolve();return}
+   const start=from.renderedPosition(),end=n.renderedPosition();
+   path.setAttribute('d',`M ${start.x} ${start.y} L ${end.x} ${end.y}`);
+   const length=path.getTotalLength(),t=Math.min(1,(now-startTime)/ms),head=length*t,tail=Math.min(65,head);
+   path.setAttribute('stroke-dasharray',`${tail} ${length+100}`);path.setAttribute('stroke-dashoffset',String(-(head-tail)));
+   if(t<1)requestAnimationFrame(frame);else{path.classList.add('fading');setTimeout(()=>path.remove(),450);resolve()}
+  }requestAnimationFrame(frame)});
+ }
+ if(epoch===state.epoch){state.location=e.target_person;activate(e.target_person)}
+}
+async function publishSaved(button){
+ button.disabled=true;button.textContent='Starting GitHub publish…';
+ try{await api('/runs/'+state.run+'/publish',{method:'POST'});state.replay=false;$('mode').textContent='LIVE · DELTA';$('mode').classList.remove('replay');$('run').disabled=true;await watch(++state.epoch)}catch(e){error(e);button.disabled=false;button.textContent='Push these files to GitHub'}
+}
+async function visitStage(id,epoch){
+ if(state.location!==id)await move({payload:{from_person:state.location},target_person:id},epoch);
+ else activate(id);
+}
 async function renderEvent(e,epoch){const p=e.payload||{},person=state.graph.nodes.find(n=>n.id===e.target_person);$('stepCount').textContent='Step '+e.seq;$('runStatus').textContent=(state.replay?'Replay · ':'')+e.type.replaceAll('_',' ');const li=h('li',{class:'event','data-type':e.type},h('div',{class:'event-top'},h('span',{},String(e.seq).padStart(2,'0')),h('span',{},e.type.replaceAll('_',' ')),person?h('span',{class:'person'},person.name):null));
- if(e.type==='moving'){li.append(h('p',{},p.adjacent?'Following a team relationship.':'Moving directly to the next expert.'));$('timeline').append(li);await move(e);return}
+ const phase=e.type==='phase_started'?p.stage:({searching:'search',search_results:'search',search_unavailable:'search',spec_written:'code',test_result:'code',committing:'github',committed:'github'})[e.type];
+ if(phase)await visitStage('stage:'+phase,epoch);
+ if(e.type==='phase_started'||e.type==='retrying')li.append(h('p',{},p.message));
+ if(e.type==='moving'){li.append(h('p',{},p.adjacent?'Following a team relationship.':'Moving directly to the next expert.'));$('timeline').append(li);await move(e,epoch);return}
+ if(e.type==='asking'){activate(e.target_person)}
  if(e.type==='asking')li.append(h('p',{},p.question),h('span',{class:'simulated'},'SIMULATED PERSONA'));
- if(e.type==='answered'){state.cy.getElementById(e.target_person).removeClass('active').addClass('answered');li.append(h('span',{class:'simulated'},'SIMULATED'+(p.cached?' · CACHED':'')),h('p',{class:'answer'},p.answer))}
+ if(e.type==='answered'){$('runStatus').textContent='Answer collected · choosing the next step…';state.cy.getElementById(e.target_person).removeClass('active').addClass('answered');li.append(h('span',{class:'simulated'},'SIMULATED'+(p.cached?' · CACHED':'')),h('p',{class:'answer'},p.answer))}
+ if(e.type==='search_unavailable')state.cy.getElementById('stage:search').data('label','Web search\nUnavailable');
+ if(e.type==='search_results')state.cy.getElementById('stage:search').data('label','Web search');
  if(e.type==='searching')li.append(h('p',{},p.query));
- if(e.type==='search_unavailable'||e.type==='error'){li.append(h('p',{},p.message));for(const file of p.files||[])li.append(h('details',{},h('summary',{},file.path),h('pre',{},file.content)));if(e.type==='error'&&p.retryable&&!state.replay)li.append(h('button',{onclick:async()=>{await api('/runs/'+state.run+'/retry',{method:'POST'});$('run').disabled=true;watch(++state.epoch).catch(error)}},'Retry run'));}
+ if(e.type==='search_unavailable'||e.type==='error'){if(e.type==='error')activate(null);li.append(h('p',{},p.message));for(const file of p.files||[])li.append(h('details',{},h('summary',{},file.path),h('pre',{},file.content)));if(e.type==='error'&&p.retryable&&!state.replay)li.append(h('button',{onclick:async()=>{await api('/runs/'+state.run+'/retry',{method:'POST'});$('run').disabled=true;watch(++state.epoch).catch(error)}},'Retry run'));}
  if(e.type==='search_results')for(const source of p.sources||[])li.append(h('p',{},link(source.url,source.title)),h('p',{},source.key_points));
  if(e.type==='spec_written'){li.append(h('p',{},p.summary));for(const r of p.requirements||[])li.append(h('p',{},r.requirement,' ',h('button',{onclick:()=>{state.pinned=true;card(r.source_person_email)}},r.source_person_email.split('@')[0])));if(p.open_questions?.length)li.append(h('details',{},h('summary',{},'Open questions'),h('ul',{},p.open_questions.map(q=>h('li',{},q)))))}
  if(e.type==='test_result')li.append(h('p',{},'Tests: '+p.status),h('details',{},h('summary',{},'Actual test output'),h('pre',{},p.output)));
  if(e.type==='committing')li.append(h('p',{},p.message));
  if(e.type==='committed')li.append(link(p.commit_url,p.message||p.sha));
- if(e.type==='done'){li.append(h('p',{},p.message||'Build complete.'),p.branch_url?link(p.branch_url,'Open generated app branch ↗'):null);for(const c of p.commits||[])li.append(h('p',{},link(c.commit_url,c.message)));if(p.learned?.length)li.append(h('details',{},h('summary',{},'What the agent learned'),h('ul',{},p.learned.map(r=>h('li',{},r.requirement+' — '+r.source_person_email)))));for(const file of p.files||[])li.append(h('details',{},h('summary',{},file.path),h('pre',{},file.content)))}
- $('timeline').append(li);li.scrollIntoView({block:'nearest',behavior:reduced?'instant':'smooth'});
- if(e.type==='asking')await sleep(e.duration_ms); // Stored pacing is also respected during replay.
+ if(e.type==='done'){activate(null);if(p.outcome==='dry_run'){const button=h('button',{class:'primary'},'Push these files to GitHub');button.onclick=()=>publishSaved(button);li.append(button)}li.append(h('p',{},p.message||'Build complete.'),p.branch_url?link(p.branch_url,'Open generated app branch ↗'):null);for(const c of p.commits||[])li.append(h('p',{},link(c.commit_url,c.message)));if(p.learned?.length)li.append(h('details',{},h('summary',{},'What the agent learned'),h('ul',{},p.learned.map(r=>h('li',{},r.requirement+' — '+r.source_person_email)))));for(const file of p.files||[])li.append(h('details',{},h('summary',{},file.path),h('pre',{},file.content)))}
+ $('timeline').append(li);$('timeline').scrollTo({top:$('timeline').scrollHeight,behavior:reduced?'instant':'smooth'});
+ if(e.type==='asking')await sleep(Math.min(e.duration_ms||1000,1000)); // Keep old replays at the current demo pace.
 }
 boot().catch(error);

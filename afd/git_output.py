@@ -7,6 +7,17 @@ import httpx
 from .build import GROUPS
 
 
+class GitHubError(RuntimeError):
+    def __init__(self,status):
+        super().__init__('GitHub operation failed: HTTP '+str(status))
+        self.status=status
+        self.user_message={
+            401:'GitHub rejected the token. Update the GITHUB_TOKEN secret and retry.',
+            403:'GitHub denied writing to the repository (HTTP 403). Give the token Contents read/write access to the destination repository, then retry. Generated files are saved.',
+            404:'GitHub could not access the repository or branch (HTTP 404). Check the destination and token repository access.'
+        }.get(status,'GitHub operation failed (HTTP '+str(status)+'). Generated files are saved; retry publishing.')
+
+
 class GitHubRepo:
     def __init__(self):
         self.url=os.getenv('GITHUB_REPO_URL','').removesuffix('.git').rstrip('/')
@@ -18,7 +29,7 @@ class GitHubRepo:
 
     def call(self,method,path,body=None):
         r=self.client.request(method,self.root+path,json=body)
-        if r.status_code>=400: raise RuntimeError('GitHub operation failed: HTTP '+str(r.status_code))
+        if r.status_code>=400: raise GitHubError(r.status_code)
         return r.json()
 
     def head(self,branch): return self.call('GET','/git/ref/heads/'+branch)['object']['sha']
@@ -56,7 +67,7 @@ class GitHubRepo:
 def publish(watcher,doc):
     if not os.getenv('GITHUB_TOKEN'):
         doc['status']='error'
-        watcher.event(doc,'error',{'message':'Source generated, but Git publishing is not configured. Git-folder push preflight failed. Add repo-scoped GITHUB_TOKEN as a Databricks secret, then retry.','files':doc['artifacts'],'retryable':True})
+        watcher.event(doc,'error',{'message':'Source saved. Configure GITHUB_TOKEN with Contents read/write for the destination repository as an App secret, then retry to publish these files.','files':doc['artifacts'],'retryable':True})
         return
     repo=GitHubRepo()
     try:

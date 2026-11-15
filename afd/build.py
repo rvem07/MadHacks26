@@ -91,6 +91,7 @@ def build(watcher,doc):
         for attempt in range(max(doc.get('build_attempts',0),sum(e['type']=='test_result' for e in doc['events'])),3):
             doc['build_attempts']=attempt+1
             saved=watcher.commit(doc);doc.clear();doc.update(saved)
+            watcher.event(doc,'phase_started',{'stage':'code','message':f'Writing and testing app source · attempt {attempt+1}.'})
             try:
                 files=validate_files(watcher.model('build',{'task':doc['task'],'spec':doc['spec'],
                     'research':doc['research'],'previous_failure':failure,'previous_files':previous_files,'required_contract_tests':CONTRACT,'reference_files':{p:(REFERENCE/p).read_text() for p in FILES}},max_tokens=9500).get('files'))
