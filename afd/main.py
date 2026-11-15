@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 import logging
 import threading
+import time
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -42,3 +43,13 @@ def index(): return FileResponse(STATIC/'index.html')
 
 @app.get('/health')
 def health(): return {'status':'ok','app':'Fernwood Agent Watcher','recovery':getattr(app.state,'recovery',{'status':'not started'})}
+
+@app.middleware('http')
+async def request_timing(request,call_next):
+    started=time.monotonic()
+    response=await call_next(request)
+    elapsed=(time.monotonic()-started)*1000
+    response.headers['Server-Timing']=f'app;dur={elapsed:.1f}'
+    logging.getLogger(__name__).info('request route=%s status=%s duration_ms=%.1f',
+        getattr(request.scope.get('route'),'path','static'),response.status_code,elapsed)
+    return response

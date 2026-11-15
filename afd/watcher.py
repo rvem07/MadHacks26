@@ -1,5 +1,7 @@
 """Fernwood workflow reusing durable CAS checkpoints and the event outbox."""
 from __future__ import annotations
+import copy
+from collections import OrderedDict
 import hashlib
 import json
 import os
@@ -54,6 +56,7 @@ class Watcher:
         self.db=db; self.model=model or model_json; self.background=background
         self.dwell=max(0.0,float(os.getenv('DWELL_SECONDS','1'))) if dwell is None else dwell
         self.lock=threading.RLock(); self.workers={}
+        self._event_lock=threading.RLock(); self._events=OrderedDict()
         from .ingestion import Ingestor
         self.ingestor=Ingestor(db,background)
 
@@ -65,7 +68,24 @@ class Watcher:
     def commit(self,doc):
         reject_secrets(doc)
         saved=self.db.put(doc,doc.get('revision',0)); self.db.project(saved)
+        self.cache_events(saved)
         return saved
+
+    def cache_events(self,doc):
+        with self._event_lock:
+            self._events[doc['run_id']]=(float('inf'),copy.deepcopy(doc['events']))
+            self._events.move_to_end(doc['run_id'])
+            while len(self._events)>32: self._events.popitem(last=False)
+
+    def events(self,rid,after=0):
+        with self._event_lock:
+            cached=self._events.get(rid)
+            if cached is None or cached[0]<time.monotonic():
+                rows=self.db.events(rid,0)
+                self._events[rid]=(time.monotonic()+1,rows)
+                while len(self._events)>32: self._events.popitem(last=False)
+            self._events.move_to_end(rid)
+            return copy.deepcopy([e for e in self._events[rid][1] if e['seq']>after])
 
     def event(self,doc,typ,payload=None,target=None,duration_ms=0,actor='agent'):
         if typ not in EVENT_TYPES: raise ValueError('Invalid event type')
@@ -80,7 +100,7 @@ class Watcher:
         doc=dict(id='run:'+rid,run_id=rid,task=task,status='running',batch_id=graph['batch_id'],created_at=now_iso(),
                  dry_run=dry_run,fresh=fresh,events=[],run_context=[],research=[],artifacts=[],commits=[],pending=None)
         self.commit(doc); self.schedule(rid)
-        return {'run_id':rid}
+        return {'run_id':rid,'batch_id':graph['batch_id']}
 
     def schedule(self,rid):
         if not self.background: return

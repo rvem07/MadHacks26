@@ -27,8 +27,14 @@ def runs():
     return [{'run_id':r['run_id'],'status':r['status'],'created_at':r['created_at'],'task':r['task'],'batch_id':r['batch_id']}
             for r in sorted(get_watcher().db.list('run:'),key=lambda r:r['created_at'],reverse=True)]
 
+@router.get('/runs/{rid}')
+def run_metadata(rid:str):
+    try: doc=get_watcher().get(rid)
+    except KeyError: raise HTTPException(404,'Run not found')
+    return {k:doc[k] for k in ['run_id','status','created_at','task','batch_id']}
+
 @router.get('/runs/{rid}/events')
-def events(rid:str,after:int=Query(default=0,ge=0)): return get_watcher().db.events(rid,after)
+def events(rid:str,after:int=Query(default=0,ge=0)): return get_watcher().events(rid,after)
 
 @router.post('/runs/{rid}/retry')
 def retry(rid:str):

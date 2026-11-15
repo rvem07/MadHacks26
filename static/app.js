@@ -20,17 +20,26 @@ async function boot(){
   h('section',{class:'compose'},h('label',{for:'task'},'WHAT SHOULD THE AGENT BUILD?'),h('div',{class:'prompt-row'},h('textarea',{id:'task',rows:2},'Build an internal time-off request tracker for our team.'),h('button',{id:'run',class:'primary'},'Build & push ↗')),h('div',{class:'options'},h('label',{},h('input',{id:'dry',type:'checkbox',checked:false}),'Preview only · skip GitHub'),h('label',{},h('input',{id:'fresh',type:'checkbox'}),'Fresh persona answers'),h('span',{id:'runStatus',role:'status'},'Ready to listen.'))),h('p',{id:'error',role:'alert'}),
   h('dialog',{id:'uploadDialog',class:'dialog'},h('h2',{},'Build an ontology from CSV'),h('p',{class:'upload-help'},'Upload your team directory, reporting lines, expertise, and context. Collaborators are optional. New runs use the uploaded data.'),h('p',{class:'upload-help'},h('a',{href:'/api/samples/team.csv',download:'team.csv'},'Download sample CSV ↗')),h('label',{for:'csvFile'},'Team CSV · up to 1 MB'),h('input',{id:'csvFile',type:'file',accept:'.csv,text/csv'}),h('p',{class:'upload-help'},'Required columns: name, email, title, team, manager_email, expertise, context_notes. Optional: works_with (emails separated by semicolons), collaboration_context.'),h('p',{id:'uploadStatus',role:'status','aria-live':'polite'}),h('div',{class:'actions'},h('button',{id:'ingestCsv',class:'primary'},'Build ontology'),h('button',{onclick:()=>$('uploadDialog').close()},'Close'))),
   h('dialog',{id:'setupDialog',class:'dialog'},h('h2',{},'Setup'),h('div',{id:'setupBody'}),h('pre',{id:'connectionResult'}),h('div',{class:'actions'},h('button',{id:'testConnection'},'Test connection'),h('button',{onclick:()=>$('setupDialog').close()},'Done')))));
- await loadGraph();
+ $('run').disabled=$('replay').disabled=$('viewToggle').disabled=true;
   $('dry').onchange=()=>{$('run').textContent=$('dry').checked?'Preview files ↗':'Build & push ↗'};$('run').onclick=()=>start().catch(error);$('setup').onclick=()=>setup().catch(error);$('replay').onclick=()=>replay().catch(error);$('uploadCsv').onclick=()=>$('uploadDialog').showModal();$('ingestCsv').onclick=()=>ingestCsv();
- window.addEventListener('resize',()=>{state.cy.resize();state.cy.fit(undefined,65)});
- $('viewToggle').onclick=async()=>{const data=$('dataView').hidden;$('dataView').hidden=!data;$('graphView').hidden=data;$('viewToggle').textContent=data?'Graph':'Data';if(data)await dataTab('Raw CSV');else{state.cy.resize();state.cy.fit(undefined,65)}};
+ window.addEventListener('resize',()=>{state.cy?.resize();state.cy?.fit(undefined,65)});
+ $('viewToggle').onclick=async()=>{const data=$('dataView').hidden;$('dataView').hidden=!data;$('graphView').hidden=data;$('viewToggle').textContent=data?'Graph':'Data';if(data)await dataTab('Raw CSV');else{state.cy?.resize();state.cy?.fit(undefined,65)}};
  for(const name of Object.keys(TABLES))$('dataTabs').append(h('button',{'data-tab':name,onclick:()=>dataTab(name).catch(error)},name));
+ await initialGraph();
+}
+async function restoreSession(){
  const pendingUpload=localStorage.getItem('fernwood.ingestion');if(pendingUpload){$('uploadDialog').showModal();watchIngestion(pendingUpload).catch(error);return}
- const saved=localStorage.getItem('fernwood.run');if(saved){const prior=(await api('/runs')).find(r=>r.run_id===saved);if(prior?.status==='running'){await loadGraph(prior.batch_id);state.run=saved;watch(++state.epoch).catch(error)}else if(prior){$('runStatus').textContent='Previous run saved · click Replay last run to review it';localStorage.removeItem('fernwood.run')}}
+ const saved=localStorage.getItem('fernwood.run');if(saved){const prior=await api('/runs/'+encodeURIComponent(saved)).catch(()=>null);if(prior?.status==='running'){await loadGraph(prior.batch_id);state.run=saved;watch(++state.epoch).catch(error)}else if(prior){$('runStatus').textContent='Previous run saved · click Replay last run to review it';localStorage.removeItem('fernwood.run')}}
+}
+async function initialGraph(){
+ $('runStatus').textContent='Loading team…';
+ try{await loadGraph();$('run').disabled=$('replay').disabled=$('viewToggle').disabled=false;$('runStatus').textContent='Ready to listen.';$('error').textContent='';await restoreSession()}
+ catch(e){error(e);$('runStatus').replaceChildren(h('button',{onclick:()=>initialGraph()},'Retry loading team'))}
 }
 const STAGE_DWELL={'stage:search':3000,'stage:code':3000};
 const STAGES=[{id:'stage:search',label:'Web search',color:'#8b5cf6'},{id:'stage:code',label:'Coding',color:'#3b82f6'},{id:'stage:github',label:'GitHub',color:'#f59e0b'}];
 async function loadGraph(batchId=null){
+ if(batchId&&state.graph?.batch_id===batchId)return;
  const next=await api('/graph'+(batchId?'?batch_id='+encodeURIComponent(batchId):''));
  state.cy?.destroy();state.graph=next;state.active=null;state.location=null;$('token').hidden=true;$('travel').replaceChildren();$('card').hidden=true;
  $('personSelect').replaceChildren(h('option',{value:''},'Inspect a person…'));
@@ -87,7 +96,7 @@ const TABLES={'Raw CSV':['raw_files'],'Bronze':['bronze_org_chart','bronze_colla
 async function dataTab(name){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('selected',b.dataset.tab===name));$('tableOptions').replaceChildren(...TABLES[name].map(t=>h('button',{onclick:()=>dataTable(t).catch(error)},t.replaceAll('_',' '))));await dataTable(TABLES[name][0])}
 async function dataTable(table){$('tableRows').textContent='Querying Unity Catalog…';const {rows}=await api('/data/'+table);const keys=Array.from(new Set(rows.flatMap(Object.keys)));$('tableRows').replaceChildren(h('table',{},h('caption',{},table+' · '+rows.length+' rows'),h('thead',{},h('tr',{},keys.map(k=>h('th',{},k)))),h('tbody',{},rows.map(row=>h('tr',{},keys.map(k=>h('td',{},k==='content'?h('pre',{},row[k]):typeof row[k]==='object'?JSON.stringify(row[k]):String(row[k]??''))))))))}
 function clearRun(){for(const stage of STAGES)state.cy.getElementById(stage.id).data('label',stage.label);state.last=0;state.active=null;state.location=null;state.stageEntered=0;$('timeline').replaceChildren();$('token').hidden=true;$('travel').replaceChildren();state.cy.elements().removeClass('active answered traversed');$('error').textContent=''}
-async function start(){const epoch=++state.epoch;clearRun();state.replay=false;$('mode').textContent='LIVE · DELTA';$('mode').classList.remove('replay');$('run').disabled=true;try{await loadGraph();const r=await api('/runs',{method:'POST',body:{task:$('task').value,dry_run:$('dry').checked,fresh:$('fresh').checked}});state.run=r.run_id;$('mode').textContent='LIVE · '+r.run_id.slice(0,8);localStorage.setItem('fernwood.run',r.run_id);await watch(epoch)}catch(e){error(e);$('run').disabled=false}}
+async function start(){const epoch=++state.epoch;clearRun();state.replay=false;$('mode').textContent='LIVE · DELTA';$('mode').classList.remove('replay');$('run').disabled=true;try{const r=await api('/runs',{method:'POST',body:{task:$('task').value,dry_run:$('dry').checked,fresh:$('fresh').checked}});state.run=r.run_id;if(r.batch_id!==state.graph.batch_id)await loadGraph(r.batch_id);$('mode').textContent='LIVE · '+r.run_id.slice(0,8);localStorage.setItem('fernwood.run',r.run_id);await watch(epoch)}catch(e){error(e);$('run').disabled=false}}
 async function watch(epoch){while(epoch===state.epoch){let events;try{events=await api('/runs/'+state.run+'/events?after='+state.last);$('error').textContent=''}catch(e){$('error').textContent='Reconnecting to the App…';await sleep(1000);continue}for(const e of events){if(epoch!==state.epoch)return;await renderEvent(e,epoch);state.last=e.seq;if((e.type==='done'||e.type==='error')&&e.seq===events[events.length-1].seq){$('run').disabled=false;return}}await sleep(500)}}
 async function replay(id=null){const runs=await api('/runs');const run=id?runs.find(r=>r.run_id===id):(runs.find(r=>r.status==='done')||runs[0]);if(!run)throw new Error('No stored run to replay yet.');const epoch=++state.epoch;clearRun();await loadGraph(run.batch_id);if(epoch!==state.epoch)return;state.run=run.run_id;state.replay=true;$('mode').textContent='HISTORY · '+run.run_id.slice(0,8);$('timeline').append(h('li',{class:'empty'},'Historical run · '+new Date(run.created_at).toLocaleString()+' · This does not start a new build.'));$('mode').classList.add('replay');$('run').disabled=true;const events=await api('/runs/'+state.run+'/events');for(const e of events){if(epoch!==state.epoch)return;await renderEvent(e,epoch);state.last=e.seq}if(epoch===state.epoch){$('run').disabled=false;$('runStatus').textContent='Replay complete · stored events'}}
 function positionPulse(){
@@ -134,9 +143,10 @@ async function visitStage(id,epoch){
  if(state.location!==id)await move({payload:{from_person:state.location},target_person:id},epoch);
  else activate(id);
 }
+const outputRequests=new Map();
 async function showVerifiedOutput(container,rid){
  container.textContent='Checking this run’s GitHub branch…';
- try{const result=await api('/runs/'+rid+'/output');
+ try{if(!outputRequests.has(rid))outputRequests.set(rid,api('/runs/'+rid+'/output').finally(()=>outputRequests.delete(rid)));const result=await outputRequests.get(rid);
   if(!container.isConnected)return;
   container.replaceChildren(result.status==='available'?link(result.branch_url,'View this run’s generated code ↗'):h('p',{},result.message));
   if(result.status!=='available')container.append(h('button',{onclick:()=>showVerifiedOutput(container,rid)},'Check link again'));

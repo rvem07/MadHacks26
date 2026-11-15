@@ -4,6 +4,9 @@ import json
 import os
 import re
 import threading
+import time
+import logging
+from collections import OrderedDict
 from .audit import now_iso
 from uuid import uuid4
 
@@ -49,14 +52,16 @@ class DeltaDocuments:
         self.lock = threading.RLock()
         self.mode = 'delta'
         self._projected = {}
+        self._graphs = OrderedDict()
+        self._graph_lock = threading.Lock()
 
     def sql(self, statement, values=None, _conflict_attempt=0):
         from databricks.sdk.service.sql import StatementParameterListItem
         parameters = [StatementParameterListItem(name=k, value=None if v is None else str(v)) for k, v in (values or {}).items()]
+        started = time.monotonic()
         r = self.client.statement_execution.execute_statement(statement=statement, warehouse_id=self.warehouse_id,
                                                               parameters=parameters, wait_timeout='50s')
         # These are SQL transport waits, never human-response/escalation waits.
-        import time
         deadline = time.monotonic() + 180
         while r.status.state.value in {'PENDING', 'RUNNING'}:
             if time.monotonic() > deadline:
@@ -77,6 +82,7 @@ class DeltaDocuments:
             part = self.client.statement_execution.get_statement_result_chunk_n(r.statement_id, chunk)
             rows.extend(part.data_array or [])
             chunk = part.next_chunk_index
+        logging.getLogger(__name__).info('sql_read_write duration_ms=%.1f', (time.monotonic()-started)*1000)
         return rows
 
     def bootstrap(self):
@@ -179,11 +185,23 @@ class DeltaDocuments:
         return [json.loads(r[0]) for r in self.sql(f'SELECT record FROM {self.fq}.`{table}` WHERE batch_id=:batch',{'batch':batch_id})]
 
     def graph(self,batch=None):
-        active=self.get('active_pipeline')
-        if not active: raise ValueError('Run the Databricks pipeline first')
-        batch=batch or active['batch_id']
-        return {'batch_id':batch,'nodes':self.pipeline_rows('nodes',batch),
-                'edges':self.pipeline_rows('edges',batch),'stats':self.pipeline_rows('pipeline_stats',batch)[0]}
+        if batch is None:
+            active=self.get('active_pipeline')
+            if not active: raise ValueError('Run the Databricks pipeline first')
+            batch=active['batch_id']
+        with self._graph_lock:
+            if batch not in self._graphs:
+                rows=self.sql(' UNION ALL '.join(
+                    f"SELECT '{table}' AS kind, record FROM {self.fq}.`{table}` WHERE batch_id=:batch"
+                    for table in ['nodes','edges','pipeline_stats']), {'batch':batch})
+                grouped={'nodes':[],'edges':[],'pipeline_stats':[]}
+                for kind,record in rows: grouped[kind].append(json.loads(record))
+                if not grouped['pipeline_stats']: raise ValueError('Pipeline batch is not published')
+                self._graphs[batch]={'batch_id':batch,'nodes':grouped['nodes'],
+                    'edges':grouped['edges'],'stats':grouped['pipeline_stats'][0]}
+                while len(self._graphs)>16: self._graphs.popitem(last=False)
+            self._graphs.move_to_end(batch)
+            return copy.deepcopy(self._graphs[batch])
 
 
 def open_documents():

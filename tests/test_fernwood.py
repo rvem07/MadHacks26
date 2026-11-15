@@ -428,3 +428,41 @@ def test_output_link_is_verified_before_display(db,monkeypatch,remote,status):
     assert result['status']==status
     assert ('branch_url' in result)==(status=='available')
     assert closed
+
+
+def test_event_cache_only_after_projection_and_restart(db,monkeypatch):
+    w=Watcher(db,background=False);rid=w.start()['run_id'];doc=w.get(rid)
+    original=db.events;reads=[]
+    monkeypatch.setattr(db,'events',lambda *args: (reads.append(args),original(*args))[1])
+    w.event(doc,'asking',{'message':'saved'})
+    assert [e['seq'] for e in w.events(rid)]==[1] and not reads
+    w.events(rid)[0]['payload']['message']='mutated'
+    assert w.events(rid)[0]['payload']['message']=='saved'
+    monkeypatch.setattr(db,'project',lambda _: (_ for _ in ()).throw(RuntimeError('projection failed')))
+    with pytest.raises(RuntimeError): w.event(doc,'answered')
+    assert len(w.events(rid))==1
+    restarted=Watcher(db,background=False)
+    assert len(restarted.events(rid))==2
+    assert [e['seq'] for e in restarted.events(rid,1)]==[2] and len(reads)==1
+
+
+def test_graph_cache_batch_switch_eviction_and_single_flight():
+    from afd.watchstore import DeltaDocuments
+    from concurrent.futures import ThreadPoolExecutor
+    import time
+    db=DeltaDocuments('warehouse','catalog','schema',client=object())
+    active=['a'];queries=[]
+    db.get=lambda _: {'batch_id':active[0]}
+    def sql(statement,values):
+        queries.append(values['batch']);time.sleep(.01)
+        return [['nodes',json.dumps({'id':values['batch']})],['pipeline_stats','{}']]
+    db.sql=sql
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results=list(pool.map(lambda _:db.graph(),range(4)))
+    assert queries==['a']
+    results[0]['nodes'].clear();assert db.graph()['nodes']
+    active[0]='b';assert db.graph()['batch_id']=='b'
+    assert db.graph('a')['batch_id']=='a' and queries==['a','b']
+    for i in range(17): db.graph(str(i))
+    assert len(db._graphs)==16
+    db.graph('a');assert queries[-1]=='a'
