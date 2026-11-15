@@ -466,3 +466,16 @@ def test_graph_cache_batch_switch_eviction_and_single_flight():
     for i in range(17): db.graph(str(i))
     assert len(db._graphs)==16
     db.graph('a');assert queries[-1]=='a'
+
+
+def test_fallback_event_cache_expires_and_local_commit_invalidates(db,monkeypatch):
+    w=Watcher(db,background=False);rid=w.start()['run_id'];doc=w.get(rid)
+    w._events.clear();clock=[10.0]
+    monkeypatch.setattr('afd.watcher.time.monotonic',lambda:clock[0])
+    calls=[];original=db.events
+    monkeypatch.setattr(db,'events',lambda *a:(calls.append(a),original(*a))[1])
+    assert w.events(rid)==[] and w.events(rid)==[] and len(calls)==1
+    clock[0]+=2;assert w.events(rid)==[] and len(calls)==2
+    w.event(doc,'asking');assert len(w.events(rid))==1 and len(calls)==2
+    for i in range(40):w.cache_events({'run_id':str(i),'events':[]})
+    assert len(w._events)==32
